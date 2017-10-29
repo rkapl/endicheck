@@ -1278,6 +1278,19 @@
 /nightly/valgrind-new
 /nightly/valgrind-old
 
+# /endicheck/
+/endicheck/*.so
+/endicheck/.deps
+/endicheck/Makefile
+/endicheck/Makefile.in
+/endicheck/endicheck-*-darwin
+/endicheck/endicheck-*-linux
+/endicheck/endicheck-*-solaris
+
+# /endicheck/tests
+/endicheck/tests/Makefile
+/endicheck/tests/Makefile.in
+
 # /none/
 /none/*.so
 /none/.deps

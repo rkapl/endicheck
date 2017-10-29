@@ -4506,6 +4506,8 @@ AC_CONFIG_FILES([
    massif/ms_print
    lackey/Makefile
    lackey/tests/Makefile
+   endicheck/Makefile
+   endicheck/tests/Makefile
    none/Makefile
    none/tests/Makefile
    none/tests/scripts/Makefile
