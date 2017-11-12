@@ -1,6 +1,6 @@
 /*--------------------------------------------------------------------*/
-/*--- A header file for main parts of the Endicheck tool.          ---*/
-/*---                                                 ec_include.h ---*/
+/*--- A header file for the shadow memory table handling.          ---*/
+/*---                                                 ec_shadow.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -28,14 +28,16 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __EC_INCLUDE_H
-#define __EC_INCLUDE_H
+#ifndef __EC_SHADOW_H
+#define __EC_SHADOW_H
 
-#include "endicheck.h"
-#include "pub_tool_basics.h"
-#include "pub_tool_tooliface.h"
-#include "pub_tool_libcassert.h"
+#include <stdint.h>
+#include "ec_include.h"
 
-#define EC_(str)    VGAPPEND(vgEndiCheck_,str)
+typedef uintptr_t ec_addr;
+
+void EC_(set_shadow)(ec_addr addr, Ec_Endianity endianity);
+Ec_Endianity EC_(get_shadow)(ec_addr addr);
+void EC_(gen_shadow_store)(IRSB* out, IREndness endness, IRExpr* addr, IRExpr* data);
 
 #endif

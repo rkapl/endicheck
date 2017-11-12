@@ -69,4 +69,19 @@
 
 #include "valgrind.h"
 
+typedef enum {
+   EC_USERREQ__DUMP_MEM = VG_USERREQ_TOOL_BASE('E','C'),
+   EC_USERREQ__MARK_ENDIAN,
+} Ec_ClientRequest;
+
+typedef enum {
+   EC_UNKNOWN, EC_NATIVE, EC_TARGET, EC_ANY, EC_ENDIANITY_COUNT
+} Ec_Endianity;
+
+#define EC_DUMP_MEM(start, size) \
+   VALGRIND_DO_CLIENT_REQUEST_EXPR(0, EC_USERREQ__DUMP_MEM, (start), (size), 0, 0, 0)
+
+#define EC_MARK_ENDIANITY(start, size, endianity) \
+   VALGRIND_DO_CLIENT_REQUEST_EXPR(0, EC_USERREQ__MARK_ENDIAN, (start), (size), (endianity), 0, 0)
+
 #endif

@@ -8,7 +8,8 @@ pkginclude_HEADERS = \
 	endicheck.h
 
 noinst_HEADERS = \
-	ec_include.h
+	ec_include.h \
+	ec_shadow.h
 
 #----------------------------------------------------------------------------
 # endicheck-<platform>
@@ -19,7 +20,7 @@ if VGCONF_HAVE_PLATFORM_SEC
 noinst_PROGRAMS += endicheck-@VGCONF_ARCH_SEC@-@VGCONF_OS@
 endif
 
-ENDICHECk_SOURCES_COMMON = ec_main.c
+ENDICHECk_SOURCES_COMMON = ec_main.c ec_shadow.c
 
 endicheck_@VGCONF_ARCH_PRI@_@VGCONF_OS@_SOURCES      = \
 	$(ENDICHECk_SOURCES_COMMON)
