@@ -65,7 +65,7 @@ typedef struct Ec_Primary {
 
 Ec_Primary shadow_table;
 
-static Ec_Secondary* get_secodary(ec_addr addr)
+static Ec_Secondary* get_secodary(Addr addr)
 {
    addr >>= EC_SECONDARY_BITS;
    tl_assert((addr & ~EC_PRIMARY_MASK) == 0);
@@ -77,19 +77,19 @@ static Ec_Secondary* get_secodary(ec_addr addr)
    return sec;
 }
 
-void EC_(set_shadow)(ec_addr addr, Ec_Endianity endianity)
+void EC_(set_shadow)(Addr addr, Ec_Endianity endianity)
 {
    Ec_Secondary *s = get_secodary(addr);
    s->ebits[addr & EC_SECONDARY_MASK] = endianity;
 }
 
-Ec_Endianity EC_(get_shadow)(ec_addr addr)
+Ec_Endianity EC_(get_shadow)(Addr addr)
 {
    Ec_Secondary *s = get_secodary(addr);
    return s->ebits[addr & EC_SECONDARY_MASK];
 }
 
-static uint8_t* get_shadow_ptr(ec_addr addr)
+static uint8_t* get_shadow_ptr(Addr addr)
 {
    Ec_Secondary *s = get_secodary(addr);
    return &s->ebits[addr & EC_SECONDARY_MASK];
@@ -97,17 +97,17 @@ static uint8_t* get_shadow_ptr(ec_addr addr)
 
 static IRType word_type(void)
 {
-   switch (sizeof(ec_addr)) {
+   switch (sizeof(Addr)) {
       case 4:
          return Ity_I32;
       case 8:
          return Ity_I64;
       default:
-         VG_(tool_panic)("invalid ec_addr_size");
+         VG_(tool_panic)("invalid Addr_size");
    }
 }
 
-static VG_REGPARM(1) uint8_t* helper_get_shadow_ptr(ec_addr addr)
+static VG_REGPARM(1) uint8_t* helper_get_shadow_ptr(Addr addr)
 {
    // VG_(message)(Vg_UserMsg, "Accessing shadow memory at %p\n", (void*)addr);
    return get_shadow_ptr(addr);

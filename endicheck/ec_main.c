@@ -465,7 +465,7 @@ static const char endianity_codes[] = "UNTA";
 #define ECRQ_DUMP_ROW_SIZE 40
 static void ecrq_dump_mem(UWord* arg)
 {
-   ec_addr start = arg[1];
+   Addr start = arg[1];
    size_t size = arg[2];
    VG_(message)(Vg_UserMsg, "Memory endianity dump (legend: Undefined, Native, Target, Any):\n");
    for(size_t i = 0; i<size; i += ECRQ_DUMP_ROW_SIZE) {
@@ -487,7 +487,7 @@ static void ecrq_dump_mem(UWord* arg)
 
 static void ecrq_mark_endian(UWord* arg)
 {
-   ec_addr start = arg[1];
+   Addr start = arg[1];
    size_t size = arg[2];
    Ec_Endianity endianity = arg[3];
    for(size_t i = 0; i<size; i++) {

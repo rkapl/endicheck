@@ -34,10 +34,8 @@
 #include <stdint.h>
 #include "ec_include.h"
 
-typedef uintptr_t ec_addr;
-
-void EC_(set_shadow)(ec_addr addr, Ec_Endianity endianity);
-Ec_Endianity EC_(get_shadow)(ec_addr addr);
+void EC_(set_shadow)(Addr addr, Ec_Endianity endianity);
+Ec_Endianity EC_(get_shadow)(Addr addr);
 
 void EC_(gen_shadow_store)(IRSB* out, IREndness endness, IRExpr* addr, IRExpr* data);
 void EC_(gen_shadow_store_guarded)(
