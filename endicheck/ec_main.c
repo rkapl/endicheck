@@ -49,11 +49,10 @@ static void EC_(post_clo_init)(void)
 {
 }
 
-static Bool has_endianess(IRType ty)
+static Bool has_endianity(IRType ty)
 {
    switch(ty) {
       case Ity_I1:
-      case Ity_I8:
       case Ity_F128:
       case Ity_F64:
       case Ity_F32:
@@ -63,6 +62,7 @@ static Bool has_endianess(IRType ty)
       case Ity_D32:
          return False;
 
+      case Ity_I8: /* yes, it can have endianess attached, although by default it is ANY */
       case Ity_I16:
       case Ity_I32:
       case Ity_I64:
@@ -76,12 +76,17 @@ static Bool has_endianess(IRType ty)
    }
 }
 
+static Ec_Endianity default_endianity(IRType ty)
+{
+   tl_assert(has_endianity(ty));
+   return (ty == Ity_I8) ? EC_ANY : EC_NATIVE;
+}
+
 /* Get a type of a temp's shadow */
 static IRType type2shadow(IRType ty)
 {
    switch(ty) {
       case Ity_I1:
-      case Ity_I8:
       case Ity_F128:
       case Ity_F64:
       case Ity_F32:
@@ -89,9 +94,10 @@ static IRType type2shadow(IRType ty)
       case Ity_D64:
       case Ity_D128:
       case Ity_D32:
-         /* We assume these types must always be of native endianity */
+         /* We assume these types must always be of native endianity, so use a dummy shadow */
          return Ity_I1;
 
+      case Ity_I8:
       case Ity_I16:
       case Ity_I32:
       case Ity_I64:
@@ -124,7 +130,11 @@ static void stmt(Ec_Env* env, IRStmt* stmt) {
 }
 
 /* The same as MC assignNew. Assigns the expression to new temporary and
- * returns reference to that temporary, if needed. */
+ * returns reference to that temporary, if needed.
+ *
+ * We use this function every time when an expression (which was previouslu flat)
+ * is expanded to a non-flat one or when we make a composite constant.
+ */
 static IRExpr* assignNew(Ec_Env* env, IRExpr* expr)
 {
    if (isIRAtom(expr))
@@ -191,28 +201,114 @@ static IRExpr* mk_shadow_vector(Ec_Env* env,IRType ty, Ec_Endianity endianity)
    }
 }
 
-static IRExpr* expr2shadow(Ec_Env* env, IRExpr *expr)
+static IRExpr* default_shadow_for_type(Ec_Env* env, IRType expr_type)
+{
+   tl_assert(has_endianity(expr_type));
+   return mk_shadow_vector(env, type2shadow(expr_type), default_endianity(expr_type));
+}
+
+static IRExpr* default_shadow(Ec_Env* env, IRExpr* expr)
 {
    IRType expr_type = typeOfIRExpr(env->out_sb->tyenv, expr);
-   tl_assert(has_endianess(expr_type));
-   Ec_Endianity default_endianity = has_endianess(expr_type) ? EC_NATIVE : EC_ANY;
+   return default_shadow_for_type(env, expr_type);
+}
+
+static IRExpr* expr2shadow(Ec_Env* env, IRExpr* expr);
+
+/* Default handler for IR ops that just move around bytes. In that case we
+ * simply apply the same operation to the shadow data.
+ */
+static IRExpr* same_for_shadow(Ec_Env* env, IRExpr* expr)
+{
    switch (expr->tag) {
+   case Iex_Unop:
+      return IRExpr_Unop(expr->Iex.Unop.op, expr2shadow(env, expr->Iex.Unop.arg));
+   case Iex_Binop:
+      return IRExpr_Binop(expr->Iex.Binop.op,
+            expr2shadow(env, expr->Iex.Binop.arg1),
+            expr2shadow(env, expr->Iex.Binop.arg2));
+   case Iex_Triop:
+      return IRExpr_Triop(expr->Iex.Triop.details->op,
+            expr2shadow(env, expr->Iex.Triop.details->arg1),
+            expr2shadow(env, expr->Iex.Triop.details->arg2),
+            expr2shadow(env, expr->Iex.Triop.details->arg3));
+   default:
+      VG_(tool_panic)("expr is not an op");
+   }
+}
+
+static IRExpr* unop2shadow(Ec_Env* env, IRExpr* expr)
+{
+   switch (expr->Iex.Unop.op) {
+      // for widening, mark the new bytes as NATIVE
+      case Iop_8Uto64:
+         return IRExpr_Binop(Iop_Or64,
+            IRExpr_Const(IRConst_U64(mk_shadow(env, 8, EC_NATIVE) & 0xFFFFFFFFFFFFFF00)),
+            assignNew(env, same_for_shadow(env, expr)));
+      case Iop_16Uto64:
+         return IRExpr_Binop(Iop_Or64,
+            IRExpr_Const(IRConst_U64(mk_shadow(env, 8, EC_NATIVE) & 0xFFFFFFFFFFFF0000)),
+            assignNew(env, same_for_shadow(env, expr)));
+      case Iop_32Uto64:
+         return IRExpr_Binop(Iop_Or64,
+            IRExpr_Const(IRConst_U64(mk_shadow(env, 8, EC_NATIVE) & 0xFFFFFFFF00000000)),
+            assignNew(env, same_for_shadow(env, expr)));
+         break;
+      case Iop_8Uto32:
+         return IRExpr_Binop(Iop_Or32,
+            IRExpr_Const(IRConst_U32(mk_shadow(env, 4, EC_NATIVE) & 0xFFFFFF00)),
+            assignNew(env, same_for_shadow(env, expr)));
+      case Iop_16Uto32:
+         return IRExpr_Binop(Iop_Or32,
+            IRExpr_Const(IRConst_U32(mk_shadow(env, 4, EC_NATIVE) & 0xFFFF0000)),
+            assignNew(env, same_for_shadow(env, expr)));
+      case Iop_8Uto16:
+         return IRExpr_Binop(Iop_Or16,
+            IRExpr_Const(IRConst_U16(mk_shadow(env, 2, EC_NATIVE) & 0xFF00)),
+            assignNew(env, same_for_shadow(env, expr)));
+      // narrowing is just a byte shuffle
+      case Iop_64to16:
+      case Iop_64to32:
+      case Iop_64to8:
+      case Iop_32to16:
+      case Iop_32to8:
+      case Iop_16to8:
+      case Iop_64HIto32:
+      case Iop_32HIto16:
+      case Iop_16HIto8:
+         return same_for_shadow(env, expr);
       default:
-         /* TODO: is this fallback right ? */
-         return mk_shadow_vector(env, type2shadow(expr_type), default_endianity);
+         return default_shadow(env, expr);
+   }
+}
+
+static IRExpr* expr2shadow(Ec_Env* env, IRExpr* expr)
+{
+   switch (expr->tag) {
+      case Iex_Get:
+         return IRExpr_Get(state2shadow(env, expr->Iex.Get.offset), type2shadow(expr->Iex.Get.ty));
+      case Iex_Load:
+         return EC_(gen_shadow_load)(env->out_sb, expr->Iex.Load.end, expr->Iex.Load.ty, expr->Iex.Load.addr);
+      case Iex_RdTmp:
+         return IRExpr_RdTmp(temp2shadow(env, expr->Iex.RdTmp.tmp));
+      case Iex_Unop:
+         return unop2shadow(env, expr);
+      case Iex_Const:
+      default:
+         return default_shadow(env, expr);
    }
 }
 
 static void shadow_wrtmp(Ec_Env *env, IRTemp to, IRExpr* from)
 {
-   if (has_endianess(typeOfIRTemp(env->out_sb->tyenv, to))) {
+   if (has_endianity(typeOfIRTemp(env->out_sb->tyenv, to))) {
       stmt(env, IRStmt_WrTmp(temp2shadow(env, to), expr2shadow(env, from)));
    }
 }
 
 static void shadow_put(Ec_Env *env, Int to, IRExpr* from)
 {
-   if (has_endianess(typeOfIRExpr(env->out_sb->tyenv, from))) {
+   if (has_endianity(typeOfIRExpr(env->out_sb->tyenv, from))) {
       stmt(env, IRStmt_Put(state2shadow(env, to), expr2shadow(env, from)));
    }
 }
@@ -220,7 +316,7 @@ static void shadow_put(Ec_Env *env, Int to, IRExpr* from)
 static void shadow_puti(Ec_Env *env, IRPutI* puti)
 {
    IRRegArray* descr = puti->descr;
-   if (has_endianess(puti->descr->elemTy)) {
+   if (has_endianity(puti->descr->elemTy)) {
       IRType shadow_type = type2shadow(puti->descr->elemTy);
       IRExpr* shadow_value = expr2shadow(env, puti->data);
       IRRegArray* new_descr = mkIRRegArray(descr->base + env->shadow_state_base, shadow_type, descr->nElems);
@@ -228,17 +324,45 @@ static void shadow_puti(Ec_Env *env, IRPutI* puti)
    }
 }
 
-static void shadow_store(Ec_Env *env, IREndness endianess, IRExpr* addr, IRExpr* value)
+static void shadow_store(Ec_Env *env, IREndness endianess, IRExpr* addr, IRExpr* value, IRExpr* guard)
 {
    IRType type = typeOfIRExpr(env->out_sb->tyenv, value);
    IRExpr* shadow_value;
-   if (has_endianess(type))
+   if (has_endianity(type))
       shadow_value = expr2shadow(env, value);
    else
       shadow_value = mk_shadow_vector(env, type, EC_ANY);
 
    /* TODO: handle endianess swapping, this is not the correct way */
-   EC_(gen_shadow_store)(env->out_sb, endianess, addr, shadow_value);
+   if (!guard) {
+      EC_(gen_shadow_store)(env->out_sb, endianess, addr, shadow_value);
+   } else {
+      EC_(gen_shadow_store_guarded)(env->out_sb, endianess, addr, shadow_value, guard);
+   }
+}
+
+static void shadow_load_guarded(Ec_Env *env, IRLoadG* load_op)
+{
+   IRExpr* loaded;
+   IRType type, arg;
+   typeOfIRLoadGOp(load_op->cvt, &type, &arg);
+   if (has_endianity(type)) {
+      IRExpr* alt = expr2shadow(env, load_op->alt);
+      loaded = EC_(gen_shadow_load_guarded)(
+            env->out_sb, load_op->end, type, load_op->addr, load_op->cvt, load_op->guard, alt);
+   } else {
+      loaded = mk_shadow_vector(env, type, EC_ANY);
+   }
+   stmt(env, IRStmt_WrTmp(temp2shadow(env, load_op->dst), loaded));
+}
+
+static void shadow_dirty(Ec_Env* env, IRDirty* dirty)
+{
+   if (dirty->tmp == IRTemp_INVALID)
+      return;
+
+   IRType type = typeOfIRTemp(env->out_sb->tyenv, dirty->tmp);
+   stmt(env, IRStmt_WrTmp(temp2shadow(env, dirty->tmp), default_shadow_for_type(env, type)));
 }
 
 static IRSB* EC_(instrument) (
@@ -293,12 +417,22 @@ static IRSB* EC_(instrument) (
             shadow_wrtmp(&env, st->Ist.WrTmp.tmp, st->Ist.WrTmp.data);
          break;
          case Ist_Store:
-            shadow_store(&env, st->Ist.Store.end, st->Ist.Store.addr, st->Ist.Store.data);
+            shadow_store(&env, st->Ist.Store.end, st->Ist.Store.addr, st->Ist.Store.data, NULL);
+         break;
+
+         case Ist_Dirty: /* TODO: not yet implemented */
+            shadow_dirty(&env, st->Ist.Dirty.details);
          break;
 
          case Ist_LoadG: /* TODO: convert to non-guarded case */
+            shadow_load_guarded(&env, st->Ist.LoadG.details);
+         break;
          case Ist_StoreG:/* TODO: convert to non-guarded case */
-         case Ist_Dirty: /* TODO: not yet implemented */
+            shadow_store(
+                  &env, st->Ist.StoreG.details->end, st->Ist.StoreG.details->addr,
+                  st->Ist.StoreG.details->data, st->Ist.StoreG.details->guard);
+         break;
+
          case Ist_CAS:   /* TODO: not yet implemented */
          case Ist_LLSC:  /* TODO: not yet implemented */
          case Ist_Exit:  /* consider checking endianity of the guard expression*/

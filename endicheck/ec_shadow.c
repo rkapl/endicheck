@@ -115,14 +115,60 @@ static VG_REGPARM(1) uint8_t* helper_get_shadow_ptr(ec_addr addr)
 
 void EC_(gen_shadow_store)(IRSB* out, IREndness endness, IRExpr* addr, IRExpr* shadow_data)
 {
+   EC_(gen_shadow_store_guarded)(out, endness, addr, shadow_data, NULL);
+}
+
+void EC_(gen_shadow_store_guarded)(
+      IRSB* out, IREndness endness, IRExpr* addr, IRExpr* shadow_data,
+      IRExpr* guard)
+{
    tl_assert(addr);
    tl_assert(shadow_data);
    // TODO: unaligned writes that may cross boundaries
    IRTemp shadow_ptr_tmp = newIRTemp(out->tyenv, word_type());
    IRDirty* shadow_ptr = unsafeIRDirty_1_N(
-            shadow_ptr_tmp, 1, "ec_secondary", VG_(fnptr_to_fnentry)(helper_get_shadow_ptr),
+            shadow_ptr_tmp, 1, "ex_get_shadow_ptr", VG_(fnptr_to_fnentry)(helper_get_shadow_ptr),
             mkIRExprVec_1(addr));
+   if (guard)
+      shadow_ptr->guard = guard;
+
    /* TODO: should we mark any memory as read by the dirty helper? MC does not seem to do that */
    addStmtToIRSB(out, IRStmt_Dirty(shadow_ptr));
-   addStmtToIRSB(out, IRStmt_Store(endness, IRExpr_RdTmp(shadow_ptr_tmp), shadow_data));
+   if (guard)
+      addStmtToIRSB(out, IRStmt_StoreG(endness, IRExpr_RdTmp(shadow_ptr_tmp), shadow_data, guard));
+   else
+      addStmtToIRSB(out, IRStmt_Store(endness, IRExpr_RdTmp(shadow_ptr_tmp), shadow_data));
+}
+
+IRExpr* EC_(gen_shadow_load)(
+      IRSB* out, IREndness endness, IRType type, IRExpr* addr)
+{
+   return EC_(gen_shadow_load_guarded)(out, endness, type, addr, ILGop_INVALID, NULL, NULL);
+}
+
+IRExpr* EC_(gen_shadow_load_guarded)(
+      IRSB* out, IREndness endness, IRType type, IRExpr* addr,
+      IRLoadGOp cvt, IRExpr* guard, IRExpr* alt)
+{
+   tl_assert(addr);
+   // TODO: unaligned writes that may cross boundaries
+   IRTemp shadow_ptr_tmp = newIRTemp(out->tyenv, word_type());
+   IRDirty* shadow_ptr = unsafeIRDirty_1_N(
+            shadow_ptr_tmp, 1, "ex_get_shadow_ptr", VG_(fnptr_to_fnentry)(helper_get_shadow_ptr),
+            mkIRExprVec_1(addr));
+   if (guard)
+      shadow_ptr->guard = guard;
+   /* TODO: should we mark any memory as read by the dirty helper? MC does not seem to do that */
+   addStmtToIRSB(out, IRStmt_Dirty(shadow_ptr));
+   IRTemp result_tmp = newIRTemp(out->tyenv, type);
+
+   if (cvt != ILGop_INVALID) {
+      IRStmt* load = IRStmt_LoadG(endness, cvt, result_tmp, IRExpr_RdTmp(shadow_ptr_tmp), alt, guard);
+      addStmtToIRSB(out, load);
+      return IRExpr_RdTmp(result_tmp);
+   } else {
+      IRExpr* load = IRExpr_Load(endness, type, IRExpr_RdTmp(shadow_ptr_tmp));
+      addStmtToIRSB(out, IRStmt_WrTmp(result_tmp, load));
+      return IRExpr_RdTmp(result_tmp);
+   }
 }

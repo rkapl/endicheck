@@ -38,6 +38,16 @@ typedef uintptr_t ec_addr;
 
 void EC_(set_shadow)(ec_addr addr, Ec_Endianity endianity);
 Ec_Endianity EC_(get_shadow)(ec_addr addr);
+
 void EC_(gen_shadow_store)(IRSB* out, IREndness endness, IRExpr* addr, IRExpr* data);
+void EC_(gen_shadow_store_guarded)(
+      IRSB* out, IREndness endness, IRExpr* addr, IRExpr* data,
+      IRExpr* guard);
+
+IRExpr* EC_(gen_shadow_load)(
+      IRSB* out, IREndness endness, IRType type, IRExpr* addr);
+IRExpr* EC_(gen_shadow_load_guarded)(
+      IRSB* out, IREndness endness, IRType type, IRExpr* addr,
+      IRLoadGOp cvt, IRExpr* guard, IRExpr* alt);
 
 #endif
