@@ -34,6 +34,7 @@
 #include "pub_tool_libcprint.h"
 #include "ec_include.h"
 #include "ec_shadow.h"
+#include "ec_errors.h"
 #include <stddef.h>
 
 #define EC_INSTRUMENT_HEAPID "ec_instrument"
@@ -132,7 +133,7 @@ static void stmt(Ec_Env* env, IRStmt* stmt) {
 /* The same as MC assignNew. Assigns the expression to new temporary and
  * returns reference to that temporary, if needed.
  *
- * We use this function every time when an expression (which was previouslu flat)
+ * We use this function every time when an expression (which was previously flat)
  * is expanded to a non-flat one or when we make a composite constant.
  */
 static IRExpr* assignNew(Ec_Env* env, IRExpr* expr)
@@ -460,8 +461,6 @@ static void EC_(fini)(Int exitcode)
 {
 }
 
-static const char endianity_codes[] = "UNTA";
-
 #define ECRQ_DUMP_ROW_SIZE 40
 static void ecrq_dump_mem(UWord* arg)
 {
@@ -476,7 +475,7 @@ static void ecrq_dump_mem(UWord* arg)
       for (size_t c = 0; c<row_size; c++) {
          Ec_Endianity e = EC_(get_shadow)(start + i + c);
          tl_assert(e >= EC_UNKNOWN && e < EC_ENDIANITY_COUNT);
-         row[c] = endianity_codes[e];
+         row[c] = EC_(endianity_codes)[e];
       }
       row[row_size] = 0;
 
@@ -488,11 +487,21 @@ static void ecrq_dump_mem(UWord* arg)
 static void ecrq_mark_endian(UWord* arg)
 {
    Addr start = arg[1];
-   size_t size = arg[2];
+   SizeT size = arg[2];
    Ec_Endianity endianity = arg[3];
-   for(size_t i = 0; i<size; i++) {
+   for(SizeT i = 0; i<size; i++) {
       EC_(set_shadow)(start + i, endianity);
    }
+}
+
+static int ecrq_assert_endian(ThreadId tid, UWord* arg)
+{
+   Addr start = arg[1];
+   SizeT size = arg[2];
+   Ec_Endianity endianity = arg[3];
+   const char* msg = (const char*) arg[4];
+
+   return EC_(check_memory_endianity)(tid, start, size, endianity, msg);
 }
 
 static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
@@ -504,9 +513,12 @@ static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
             ecrq_dump_mem(arg);
             *ret = 1;
          break;
-         case EC_USERREQ__MARK_ENDIAN:
+         case EC_USERREQ__MARK_ENDIANITY:
             ecrq_mark_endian(arg);
             *ret = 1;
+         break;
+         case EC_USERREQ__CHECK_ENDIANITY:
+	    *ret = ecrq_assert_endian(tid, arg);
          break;
          default:
             VG_(message)(Vg_UserMsg, "Warning: unknown endicheck client request code %llx\n",(ULong)arg[0]);
@@ -517,6 +529,14 @@ static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
    return False;
 }
 
+const char EC_(endianity_codes)[] = "UNTA";
+const char* EC_(endianity_names)[] = {
+   "Undefined",
+   "Native",
+   "Target",
+   "Any"
+};
+
 static void EC_(pre_clo_init)(void)
 {
    VG_(details_name)            ("endicheck");
@@ -526,11 +546,26 @@ static void EC_(pre_clo_init)(void)
       "Copyright (C) 2002-2017, and GNU GPL'd, by Roman Kapl.");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
 
-   VG_(basic_tool_funcs)        (
-             EC_(post_clo_init),
-             EC_(instrument),
-             EC_(fini));
-   VG_(needs_client_requests)     (EC_(client_request));
+   VG_(basic_tool_funcs)(
+            EC_(post_clo_init),
+            EC_(instrument),
+            EC_(fini));
+   VG_(needs_tool_errors)(
+            EC_(eq_Error),
+            EC_(before_pp_Error),
+            EC_(pp_Error),
+            True,/*show TIDs for errors*/
+            EC_(update_Error_extra),
+            EC_(is_recognised_suppression),
+            EC_(read_extra_suppression_info),
+            EC_(error_matches_suppression),
+            EC_(get_error_name),
+            EC_(get_extra_suppression_info),
+            EC_(print_extra_suppression_use),
+            EC_(update_extra_suppression_use));
+   VG_(needs_client_requests)(
+            EC_(client_request));
+   VG_(needs_xml_output)();
 }
 
 VG_DETERMINE_INTERFACE_VERSION(EC_(pre_clo_init))

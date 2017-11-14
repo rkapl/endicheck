@@ -20,7 +20,7 @@ if VGCONF_HAVE_PLATFORM_SEC
 noinst_PROGRAMS += endicheck-@VGCONF_ARCH_SEC@-@VGCONF_OS@
 endif
 
-ENDICHECk_SOURCES_COMMON = ec_main.c ec_shadow.c
+ENDICHECk_SOURCES_COMMON = ec_main.c ec_shadow.c ec_errors.c
 
 endicheck_@VGCONF_ARCH_PRI@_@VGCONF_OS@_SOURCES      = \
 	$(ENDICHECk_SOURCES_COMMON)

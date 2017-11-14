@@ -31,11 +31,14 @@
 #ifndef __EC_INCLUDE_H
 #define __EC_INCLUDE_H
 
-#include "endicheck.h"
 #include "pub_tool_basics.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_libcassert.h"
+#include "endicheck.h"
 
 #define EC_(str)    VGAPPEND(vgEndiCheck_,str)
+
+extern const char EC_(endianity_codes)[];
+extern const char* EC_(endianity_names)[];
 
 #endif
