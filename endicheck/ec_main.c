@@ -544,7 +544,7 @@ static void EC_(pre_clo_init)(void)
    VG_(details_description)     ("wrong endianity detector");
    VG_(details_copyright_author)(
       "Copyright (C) 2002-2017, and GNU GPL'd, by Roman Kapl.");
-   VG_(details_bug_reports_to)  (VG_BUGS_TO);
+   VG_(details_bug_reports_to)  ("code@rkapl.cz");
 
    VG_(basic_tool_funcs)(
             EC_(post_clo_init),
