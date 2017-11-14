@@ -5,6 +5,7 @@
 #include <pub_tool_libcprint.h>
 
 Bool EC_(check_syscalls);
+Bool EC_(allow_unknown) = True;
 
 typedef enum  {
    Ec_Err_MemoryEndianity
@@ -47,7 +48,7 @@ Bool EC_(check_memory_endianity)(
    Bool all_ok = True;
    for(SizeT i = 0; i<size; i++) {
       Ec_Endianity e = EC_(get_shadow)(base + i);
-      Bool ok = (e == wanted) || (e == EC_ANY);
+      Bool ok = (e == wanted) || (e == EC_ANY) || (EC_(allow_unknown) && (e == EC_UNKNOWN));
       if (last_ok != ok) {
          if (!ok) {
             start = i;

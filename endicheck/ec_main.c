@@ -29,9 +29,11 @@
 */
 
 #include "pub_tool_basics.h"
+#include "pub_tool_libcbase.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_libcprint.h"
+#include "pub_tool_options.h"
 #include "ec_include.h"
 #include "ec_shadow.h"
 #include "ec_errors.h"
@@ -529,6 +531,23 @@ static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
    return False;
 }
 
+static Bool ec_process_cmd_line_options(const char* arg)
+{
+   if VG_BOOL_CLO(arg, "--alow-unknown", EC_(allow_unknown)) {}
+   else return False;
+   return True;
+}
+
+static void ec_print_usage(void) {
+   VG_(printf)(
+"    --allow-unknown=yes|no      report unknown endianess as error?\n"
+   );
+}
+
+static void ec_print_debug_usage(void) {
+
+}
+
 const char EC_(endianity_codes)[] = "UNTA";
 const char* EC_(endianity_names)[] = {
    "Undefined",
@@ -563,6 +582,10 @@ static void EC_(pre_clo_init)(void)
             EC_(get_extra_suppression_info),
             EC_(print_extra_suppression_use),
             EC_(update_extra_suppression_use));
+   VG_(needs_command_line_options)(
+            ec_process_cmd_line_options,
+            ec_print_usage,
+            ec_print_debug_usage);
    VG_(needs_client_requests)(
             EC_(client_request));
    VG_(needs_xml_output)();

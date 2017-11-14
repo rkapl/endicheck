@@ -34,6 +34,7 @@
 #include "ec_include.h"
 
 extern Bool EC_(check_syscalls);
+extern Bool EC_(allow_unknown);
 
 Bool EC_(check_memory_endianity)(
       ThreadId tid, Addr base, SizeT size, Ec_Endianity wanted, const char* source_msg);
