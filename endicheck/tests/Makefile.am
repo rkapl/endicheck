@@ -8,3 +8,6 @@ EXTRA_DIST += simple_correct.stderr.exp simple_correct.vgtest
 
 check_PROGRAMS += simple_incorrect
 EXTRA_DIST += simple_incorrect.vgtest simple_incorrect.stderr.exp
+
+check_PROGRAMS += memcmpy_correct
+EXTRA_DIST += memcmpy_correct.vgtest memcmpy_correct.stderr.exp
