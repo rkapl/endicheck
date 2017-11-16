@@ -1,0 +1,9 @@
+#!/bin/bash
+cp simple_correct.c $1.c
+echo "prog: $1" > $1.vgtest
+touch $1.stderr.exp
+echo >> Makefile.am
+echo "check_PROGRAMS += $1" >> Makefile.am
+echo "EXTRA_DIST += $1.vgtest $1.stderr.exp" >> Makefile.am
+
+git add $1.c $1.vgtest $1.stderr.exp

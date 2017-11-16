@@ -1,0 +1,8 @@
+
+Memory does not contain data of endianity Target
+A check of block at 0x........ was requested.
+The endianity is invalid at bytes 4 (size 4) in that block
+   at 0x........: main (simple_incorrect.c:16)
+
+
+ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)
