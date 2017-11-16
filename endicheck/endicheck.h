@@ -62,7 +62,7 @@
 
 /* This file is for inclusion into client (your!) code.
 
-   You can use these macros to manipulate and query endianity of your data__ENDICHECK_H.
+   You can use these macros to manipulate and query endianity of your data.
 
    See comment near the top of valgrind.h on how to use them.
 */
