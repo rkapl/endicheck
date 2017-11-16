@@ -43,6 +43,7 @@
 
 typedef struct {
       IRSB* out_sb;
+      IRTypeEnv* tyenv;
       IRType word_type;
       IRTemp shadow_temp_base;
       IRTemp shadow_state_base;
@@ -161,8 +162,8 @@ static IRExpr* assignNew(Ec_Env* env, IRExpr* expr)
    if (isIRAtom(expr))
       return expr;
 
-   IRType type = typeOfIRExpr(env->out_sb->tyenv, expr);
-   IRTemp tmp = newIRTemp(env->out_sb->tyenv, type);
+   IRType type = typeOfIRExpr(env->tyenv, expr);
+   IRTemp tmp = newIRTemp(env->tyenv, type);
    IRStmt* assignment = IRStmt_WrTmp(tmp, expr);
    tl_assert(isFlatIRStmt(assignment));
    stmt(env, assignment);
@@ -233,7 +234,7 @@ static IRExpr* default_shadow_for_type(Ec_Env* env, IRType expr_type)
  */
 static IRExpr* default_shadow(Ec_Env* env, IRExpr* expr)
 {
-   IRType expr_type = typeOfIRExpr(env->out_sb->tyenv, expr);
+   IRType expr_type = typeOfIRExpr(env->tyenv, expr);
    return default_shadow_for_type(env, expr_type);
 }
 
@@ -317,7 +318,7 @@ static IRExpr* bitop2shadow(Ec_Env* env, IRExpr* expr)
     * If the two argument shadows are the same, propagate them.
     * If they are not, return NATIVE.
     */
-   IRType type = typeOfIRExpr(env->out_sb->tyenv, expr->Iex.Binop.arg1);
+   IRType type = typeOfIRExpr(env->tyenv, expr->Iex.Binop.arg1);
    IRExpr* arg1s = expr2shadow(env, expr->Iex.Binop.arg1);
    IRExpr* arg2s = expr2shadow(env, expr->Iex.Binop.arg2);
    IRExpr* are_equal = assignNew(env, IRExpr_Binop(op_for_type(Iop_CmpEQ8, type), arg1s, arg2s));
@@ -399,14 +400,14 @@ static IRExpr* expr2shadow(Ec_Env* env, IRExpr* expr)
 
 static void shadow_wrtmp(Ec_Env *env, IRTemp to, IRExpr* from)
 {
-   if (has_endianity(typeOfIRTemp(env->out_sb->tyenv, to))) {
+   if (has_endianity(typeOfIRTemp(env->tyenv, to))) {
       stmt(env, IRStmt_WrTmp(temp2shadow(env, to), expr2shadow(env, from)));
    }
 }
 
 static void shadow_put(Ec_Env *env, Int to, IRExpr* from)
 {
-   if (has_endianity(typeOfIRExpr(env->out_sb->tyenv, from))) {
+   if (has_endianity(typeOfIRExpr(env->tyenv, from))) {
       stmt(env, IRStmt_Put(state2shadow(env, to), expr2shadow(env, from)));
    }
 }
@@ -424,7 +425,7 @@ static void shadow_puti(Ec_Env *env, IRPutI* puti)
 
 static void shadow_store(Ec_Env *env, IREndness endianess, IRExpr* addr, IRExpr* value, IRExpr* guard)
 {
-   IRType type = typeOfIRExpr(env->out_sb->tyenv, value);
+   IRType type = typeOfIRExpr(env->tyenv, value);
    IRExpr* shadow_value;
    if (has_endianity(type))
       shadow_value = expr2shadow(env, value);
@@ -459,7 +460,7 @@ static void shadow_dirty(Ec_Env* env, IRDirty* dirty)
    if (dirty->tmp == IRTemp_INVALID)
       return;
 
-   IRType type = typeOfIRTemp(env->out_sb->tyenv, dirty->tmp);
+   IRType type = typeOfIRTemp(env->tyenv, dirty->tmp);
    stmt(env, IRStmt_WrTmp(temp2shadow(env, dirty->tmp), default_shadow_for_type(env, type)));
 }
 
@@ -481,6 +482,7 @@ static IRSB* EC_(instrument) (
    env.out_sb = deepCopyIRSBExceptStmts(sb);
    env.word_type = gWordTy;
    env.shadow_state_base = layout->total_sizeB;
+   env.tyenv = env.out_sb->tyenv;
 
    /* Unlike memcheck, we try to get off with having direct mapping between temporaries and their
     * shadow values. They are placed directly after the regular variables */
