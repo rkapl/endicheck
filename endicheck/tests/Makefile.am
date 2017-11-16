@@ -14,3 +14,9 @@ EXTRA_DIST += memcmpy_correct.vgtest memcmpy_correct.stderr.exp
 
 check_PROGRAMS += bitop
 EXTRA_DIST += bitop.vgtest bitop.stderr.exp
+
+check_PROGRAMS += shift
+EXTRA_DIST += shift.vgtest shift.stderr.exp
+
+check_PROGRAMS += bitpack
+EXTRA_DIST += bitpack.vgtest bitpack.stderr.exp

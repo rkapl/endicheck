@@ -77,13 +77,13 @@ static Ec_Secondary* get_secodary(Addr addr)
    return sec;
 }
 
-void EC_(set_shadow)(Addr addr, Ec_Endianity endianity)
+void EC_(set_shadow)(Addr addr, Ec_Shadow endianity)
 {
    Ec_Secondary *s = get_secodary(addr);
    s->ebits[addr & EC_SECONDARY_MASK] = endianity;
 }
 
-Ec_Endianity EC_(get_shadow)(Addr addr)
+Ec_Shadow EC_(get_shadow)(Addr addr)
 {
    Ec_Secondary *s = get_secodary(addr);
    return s->ebits[addr & EC_SECONDARY_MASK];

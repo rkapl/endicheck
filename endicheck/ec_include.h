@@ -35,8 +35,16 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_libcassert.h"
 #include "endicheck.h"
+#include <stdint.h>
 
 #define EC_(str)    VGAPPEND(vgEndiCheck_,str)
+
+#define EC_EMPTY_TAG 0x8
+#define EC_NATIVE_EMPTY (EC_NATIVE + EC_EMPTY_TAG)
+typedef uint8_t Ec_Shadow;
+
+Ec_Endianity EC_(endianity_for_shadow)(Ec_Shadow shadow);
+Bool EC_(is_empty_for_shadow) (Ec_Shadow shadow);
 
 extern const char EC_(endianity_codes)[];
 extern const char* EC_(endianity_names)[];

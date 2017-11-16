@@ -17,13 +17,13 @@ typedef struct {
          Addr base;
          SizeT start;
          SizeT size;
-         Ec_Endianity wanted_endianity;
+         Ec_Shadow wanted_endianity;
       } range_endianity;
    };
    const char* source_msg;
 } Ec_Error;
 
-static void report_range(ThreadId tid, Addr base, SizeT start, SizeT end, Ec_Endianity wanted, const char* source_msg)
+static void report_range(ThreadId tid, Addr base, SizeT start, SizeT end, Ec_Shadow wanted, const char* source_msg)
 {
    Ec_Error error;
    error.range_endianity.base = base;
@@ -36,7 +36,7 @@ static void report_range(ThreadId tid, Addr base, SizeT start, SizeT end, Ec_End
 }
 
 Bool EC_(check_memory_endianity)(
-      ThreadId tid, Addr base, SizeT size, Ec_Endianity wanted, const char* source_msg)
+      ThreadId tid, Addr base, SizeT size, Ec_Shadow wanted, const char* source_msg)
 {
    if (wanted == EC_ANY)
       return True;
@@ -47,7 +47,8 @@ Bool EC_(check_memory_endianity)(
    Bool last_ok = True;
    Bool all_ok = True;
    for(SizeT i = 0; i<size; i++) {
-      Ec_Endianity e = EC_(get_shadow)(base + i);
+      Ec_Shadow shadow = EC_(get_shadow)(base + i);
+      Ec_Endianity e = EC_(endianity_for_shadow)(shadow);
       Bool ok = (e == wanted) || (e == EC_ANY) || (EC_(allow_unknown) && (e == EC_UNKNOWN));
       if (last_ok != ok) {
          if (!ok) {
