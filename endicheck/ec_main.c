@@ -365,12 +365,12 @@ static VG_REGPARM(2) ULong helper_combine_or_shadow(ULong a_shadow, ULong b_shad
 {
    /* hopefully the compiler will recognize these are constants */
    ULong tag_mask = mk_shadow(NULL, 8, EC_EMPTY_TAG);
-   ULong native = mk_shadow(NULL, 8, EC_EMPTY_TAG);
+   ULong native = mk_shadow(NULL, 8, EC_NATIVE);
 
-   /* True if both cells are not empty */
+   /* True if both cells are full */
    ULong nempty_intersection = (~a_shadow & ~b_shadow) & tag_mask;
-   /* True if both cells are mpty */
-   ULong empty_union = (a_shadow | b_shadow) & tag_mask;
+   /* True if both cells are empty */
+   ULong empty_union = (a_shadow & b_shadow) & tag_mask;
    if ((a_shadow & ~tag_mask) == (b_shadow & ~tag_mask)) {
       /* the shadows are the same, do the regular stuff for bitops */
       return a_shadow | empty_union;
