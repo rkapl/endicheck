@@ -54,7 +54,7 @@ Bool EC_(check_memory_endianity)(
          if (!ok) {
             start = i;
          } else {
-            report_range(tid, base, start, i - 1, wanted, source_msg);
+            report_range(tid, base, start, i, wanted, source_msg);
          }
       }
       last_ok = ok;
