@@ -116,6 +116,24 @@ static IRType type2shadow(IRType ty)
    }
 }
 
+/* Return and IROp of correct argument size. Assume the `base` irop is the byte-sized
+ * and followed with its 16,32,64 versions, as common in VEX IR */
+static IROp op_for_type(IROp base, IRType type)
+{
+   switch(type) {
+      case Ity_I8:
+         return base + 0;
+      case Ity_I16:
+         return base + 1;
+      case Ity_I32:
+         return base + 2;
+      case Ity_I64:
+         return base + 3;
+      default:
+         VG_(tool_panic)("op_for_type unsupported type");
+   }
+}
+
 /* Get a shadow temp variable corresponding to a temp */
 static IRTemp temp2shadow(Ec_Env* env, IRTemp temp)
 {
@@ -210,6 +228,9 @@ static IRExpr* default_shadow_for_type(Ec_Env* env, IRType expr_type)
    return mk_shadow_vector(env, type2shadow(expr_type), default_endianity(expr_type));
 }
 
+/* Returns a default shadow value (usually EC_NATIVE) for the given
+ * type of expression
+ */
 static IRExpr* default_shadow(Ec_Env* env, IRExpr* expr)
 {
    IRType expr_type = typeOfIRExpr(env->out_sb->tyenv, expr);
@@ -218,8 +239,10 @@ static IRExpr* default_shadow(Ec_Env* env, IRExpr* expr)
 
 static IRExpr* expr2shadow(Ec_Env* env, IRExpr* expr);
 
-/* Default handler for IR ops that just move around bytes. In that case we
- * simply apply the same operation to the shadow data.
+/*
+ * Default handler for IR ops that just move around bytes. In that case we
+ * simply apply the same operation to the shadow data. An example of these
+ * are narrowing conversions.
  */
 static IRExpr* same_for_shadow(Ec_Env* env, IRExpr* expr)
 {
@@ -280,9 +303,73 @@ static IRExpr* unop2shadow(Ec_Env* env, IRExpr* expr)
       case Iop_32HIto16:
       case Iop_16HIto8:
          return same_for_shadow(env, expr);
+
+
       default:
          return default_shadow(env, expr);
    }
+}
+
+static IRExpr* bitop2shadow(Ec_Env* env, IRExpr* expr)
+{
+   tl_assert(expr->tag == Iex_Binop);
+   /* Bitwise operations do not care about the order of bytes.
+    * If the two argument shadows are the same, propagate them.
+    * If they are not, return NATIVE.
+    */
+   IRType type = typeOfIRExpr(env->out_sb->tyenv, expr->Iex.Binop.arg1);
+   IRExpr* arg1s = expr2shadow(env, expr->Iex.Binop.arg1);
+   IRExpr* arg2s = expr2shadow(env, expr->Iex.Binop.arg2);
+   IRExpr* are_equal = assignNew(env, IRExpr_Binop(op_for_type(Iop_CmpEQ8, type), arg1s, arg2s));
+   return IRExpr_ITE(are_equal, arg1s, default_shadow(env, expr));
+}
+
+static IRExpr* binop2shadow(Ec_Env* env, IRExpr* expr)
+{
+   switch (expr->Iex.Binop.op) {
+      case Iop_Or8:
+      case Iop_Or16:
+      case Iop_Or32:
+      case Iop_Or64:
+      case Iop_And8:
+      case Iop_And16:
+      case Iop_And32:
+      case Iop_And64:
+      case Iop_Xor8:
+      case Iop_Xor16:
+      case Iop_Xor32:
+      case Iop_Xor64:
+         return bitop2shadow(env, expr);
+
+   default:
+      return default_shadow(env, expr);
+   }
+}
+
+static IRExpr* triop2shadow(Ec_Env* env, IRExpr* expr)
+{
+   IRTriop* op = expr->Iex.Triop.details;
+   switch (op->op) {
+   default:
+      return default_shadow(env, expr);
+   }
+}
+
+static IRExpr* qop2shadow(Ec_Env* env, IRExpr* expr)
+{
+   IRQop* op = expr->Iex.Qop.details;
+   switch (op->op) {
+   default:
+      return default_shadow(env, expr);
+   }
+}
+
+static IRExpr* ite2shadow(Ec_Env* env, IRExpr* expr)
+{
+   tl_assert(expr->tag == Iex_ITE);
+   return IRExpr_ITE(
+            expr->Iex.ITE.cond,
+            expr2shadow(env, expr->Iex.ITE.iftrue), expr2shadow(env, expr->Iex.ITE.iffalse));
 }
 
 static IRExpr* expr2shadow(Ec_Env* env, IRExpr* expr)
@@ -296,6 +383,14 @@ static IRExpr* expr2shadow(Ec_Env* env, IRExpr* expr)
          return IRExpr_RdTmp(temp2shadow(env, expr->Iex.RdTmp.tmp));
       case Iex_Unop:
          return unop2shadow(env, expr);
+      case Iex_Binop:
+         return binop2shadow(env, expr);
+      case Iex_Triop:
+         return triop2shadow(env, expr);
+      case Iex_Qop:
+         return qop2shadow(env, expr);
+      case Iex_ITE:
+         return ite2shadow(env, expr);
       case Iex_Const:
       default:
          return default_shadow(env, expr);
