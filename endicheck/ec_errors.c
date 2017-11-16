@@ -4,8 +4,8 @@
 #include <pub_tool_options.h>
 #include <pub_tool_libcprint.h>
 
-Bool EC_(check_syscalls);
-Bool EC_(allow_unknown) = True;
+Bool EC_(opt_check_syscalls);
+Bool EC_(opt_allow_unknown) = True;
 
 typedef enum  {
    Ec_Err_MemoryEndianity
@@ -40,7 +40,7 @@ Bool EC_(check_memory_endianity)(
 {
    if (wanted == EC_ANY)
       return True;
-   //VG_(message)(Vg_UserMsg, "Checking %lx (size %lu)\n", base, size);
+   // VG_(message)(Vg_UserMsg, "Checking %lx (size %lu)\n", base, size);
 
    tl_assert(wanted != EC_UNKNOWN);
    SizeT start = 0;
@@ -49,7 +49,7 @@ Bool EC_(check_memory_endianity)(
    for(SizeT i = 0; i<size; i++) {
       Ec_Shadow shadow = EC_(get_shadow)(base + i);
       Ec_Endianity e = EC_(endianity_for_shadow)(shadow);
-      Bool ok = (e == wanted) || (e == EC_ANY) || (EC_(allow_unknown) && (e == EC_UNKNOWN));
+      Bool ok = (e == wanted) || (e == EC_ANY) || (EC_(opt_allow_unknown) && (e == EC_UNKNOWN));
       if (last_ok != ok) {
          if (!ok) {
             start = i;

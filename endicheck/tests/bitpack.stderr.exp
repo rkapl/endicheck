@@ -1,0 +1,14 @@
+
+Memory endianity dump (legend: Undefined, Native, Target, Any, - Empty):
+0x........: T T T T T T T T 
+
+Memory endianity dump (legend: Undefined, Native, Target, Any, - Empty):
+0x........: A A N-N-N-N-N-N-
+
+Memory does not contain data of endianity Target
+A check of block at 0x........ was requested.
+The endianity is invalid at bytes 2 (size 6) in that block
+   at 0x........: main (bitpack.c:25)
+
+
+ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)

@@ -43,6 +43,8 @@
 #define EC_NATIVE_EMPTY (EC_NATIVE + EC_EMPTY_TAG)
 typedef uint8_t Ec_Shadow;
 
+extern Bool EC_(opt_guess_const_size);
+
 Ec_Endianity EC_(endianity_for_shadow)(Ec_Shadow shadow);
 Bool EC_(is_empty_for_shadow) (Ec_Shadow shadow);
 

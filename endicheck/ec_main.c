@@ -545,6 +545,42 @@ static IRExpr* qop2shadow(Ec_Env* env, IRExpr* expr)
    }
 }
 
+static ULong guess_constant(ULong value) {
+   Bool still_zero = True;
+   ULong acc = 0;
+   for(int i = 7; i >= 0; i--) {
+      acc = acc << 8;
+      Bool was_zero = still_zero;
+      ULong leading = (value >> i*8);
+      if (leading != 0)
+         still_zero = False;
+
+      if (still_zero)
+         acc |= EC_EMPTY_TAG;
+
+      acc |= (was_zero && i == 0) ? EC_ANY : EC_NATIVE;
+   }
+   // VG_(message)(Vg_UserMsg, "guessed shadow %llx for constant %llx\n", acc, value);
+   return acc;
+}
+
+static IRExpr* const_guess2shadow(Ec_Env* env, IRExpr* expr)
+{
+   IRType type = typeOfIRExpr(env->tyenv, expr);
+   switch(type) {
+      case Ity_I8:
+         return IRExpr_Const(IRConst_U8(guess_constant(expr->Iex.Const.con->Ico.U8)));
+      case Ity_I16:
+         return IRExpr_Const(IRConst_U16(guess_constant(expr->Iex.Const.con->Ico.U16)));
+      case Ity_I32:
+         return IRExpr_Const(IRConst_U32(guess_constant(expr->Iex.Const.con->Ico.U32)));
+      case Ity_I64:
+         return IRExpr_Const(IRConst_U64(guess_constant(expr->Iex.Const.con->Ico.U64)));
+      default:
+         return default_shadow(env, expr);
+   }
+}
+
 static IRExpr* ite2shadow(Ec_Env* env, IRExpr* expr)
 {
    tl_assert(expr->tag == Iex_ITE);
@@ -573,6 +609,10 @@ static IRExpr* expr2shadow(Ec_Env* env, IRExpr* expr)
       case Iex_ITE:
          return ite2shadow(env, expr);
       case Iex_Const:
+         if (EC_(opt_guess_const_size))
+            return const_guess2shadow(env, expr);
+         else
+            return default_shadow(env, expr);
       default:
          return default_shadow(env, expr);
    }
@@ -808,9 +848,12 @@ static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
    return False;
 }
 
+Bool EC_(opt_guess_const_size) = True;
+
 static Bool ec_process_cmd_line_options(const char* arg)
 {
-   if VG_BOOL_CLO(arg, "--alow-unknown", EC_(allow_unknown)) {}
+   if VG_BOOL_CLO(arg, "--alow-unknown", EC_(opt_allow_unknown)) {}
+   else if VG_BOOL_CLO(arg, "--guess-const-size", EC_(opt_guess_const_size)) {}
    else return False;
    return True;
 }
