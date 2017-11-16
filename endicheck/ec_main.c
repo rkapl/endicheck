@@ -823,6 +823,13 @@ static int ecrq_assert_endian(ThreadId tid, UWord* arg)
    return EC_(check_memory_endianity)(tid, start, size, endianity, msg);
 }
 
+static void ec_new_mem_stack(Addr a, SizeT len)
+{
+   for(SizeT i = 0; i<len; i++) {
+      EC_(set_shadow)(a + i, EC_UNKNOWN);
+   }
+}
+
 static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
 {
    UWord req = arg[0];
@@ -902,6 +909,7 @@ static void EC_(pre_clo_init)(void)
             EC_(get_extra_suppression_info),
             EC_(print_extra_suppression_use),
             EC_(update_extra_suppression_use));
+   VG_(track_new_mem_stack)(ec_new_mem_stack);
    VG_(needs_command_line_options)(
             ec_process_cmd_line_options,
             ec_print_usage,
