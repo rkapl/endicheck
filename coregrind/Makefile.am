@@ -337,6 +337,7 @@ COREGRIND_SOURCES_COMMON = \
 	m_xtree.c \
 	m_xtmemory.c \
 	m_aspacehl.c \
+	m_otrack.c \
 	m_aspacemgr/aspacemgr-common.c \
 	m_aspacemgr/aspacemgr-linux.c \
 	m_aspacemgr/aspacemgr-segnames.c \

@@ -26,7 +26,6 @@ MEMCHECK_SOURCES_COMMON = \
 	mc_malloc_wrappers.c \
 	mc_main.c \
 	mc_translate.c \
-	mc_machine.c \
 	mc_errors.c
 
 memcheck_@VGCONF_ARCH_PRI@_@VGCONF_OS@_SOURCES      = \
