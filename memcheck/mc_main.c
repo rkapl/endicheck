@@ -50,6 +50,7 @@
 #include "pub_tool_xarray.h"
 #include "pub_tool_xtree.h"
 #include "pub_tool_xtmemory.h"
+#include "pub_tool_otrack.h"
 
 #include "mc_include.h"
 #include "memcheck.h"   /* for client requests */
@@ -4445,7 +4446,7 @@ static UInt mb_get_origin_for_guest_offset ( ThreadId tid,
    Int   sh2off;
    UInt  area[3];
    UInt  otag;
-   sh2off = MC_(get_otrack_shadow_offset)( offset, size );
+   sh2off = VG_(get_otrack_shadow_offset)( offset, size );
    if (sh2off == -1)
       return 0;  /* This piece of guest state is not tracked */
    tl_assert(sh2off >= 0);
@@ -4540,7 +4541,7 @@ static void mc_copy_mem_to_reg ( CorePart part, ThreadId tid, Addr a,
       return;
 
    /* Track origins. */
-   offset = MC_(get_otrack_shadow_offset)( guest_state_offset, size );
+   offset = VG_(get_otrack_shadow_offset)( guest_state_offset, size );
    if (offset == -1)
       return;
 
@@ -4590,7 +4591,7 @@ static void mc_copy_reg_to_mem ( CorePart part, ThreadId tid,
       return;
 
    /* Track origins. */
-   offset = MC_(get_otrack_shadow_offset)( guest_state_offset, size );
+   offset = VG_(get_otrack_shadow_offset)( guest_state_offset, size );
    if (offset == -1)
       return;
 

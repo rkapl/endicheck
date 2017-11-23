@@ -43,7 +43,7 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_guest.h"         // VexGuestArchState
 
-#include "mc_include.h"
+#include "pub_core_otrack.h"
 
 #define MC_SIZEOF_GUEST_STATE  sizeof(VexGuestArchState)
 
@@ -94,7 +94,7 @@ static inline Bool host_is_little_endian ( void ) {
 */
 static Int get_otrack_shadow_offset_wrk ( Int offset, Int szB ); /*fwds*/
 
-Int MC_(get_otrack_shadow_offset) ( Int offset, Int szB )
+Int VG_(get_otrack_shadow_offset) ( Int offset, Int szB )
 {
    Int cand = get_otrack_shadow_offset_wrk( offset, szB );
    if (cand == -1) 
@@ -1333,7 +1333,7 @@ static Int get_otrack_shadow_offset_wrk ( Int offset, Int szB )
    This function must agree with MC_(get_otrack_shadow_offset) above.
    See comments at the start of MC_(get_otrack_shadow_offset).
 */
-IRType MC_(get_otrack_reg_array_equiv_int_type) ( IRRegArray* arr )
+IRType VG_(get_otrack_reg_array_equiv_int_type) ( IRRegArray* arr )
 {
    /* -------------------- ppc64 -------------------- */
 #  if defined(VGA_ppc64be) || defined(VGA_ppc64le)

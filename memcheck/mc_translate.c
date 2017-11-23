@@ -39,6 +39,7 @@
 #include "pub_tool_xarray.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_libcbase.h"
+#include "pub_tool_otrack.h"
 
 #include "mc_include.h"
 
@@ -7249,7 +7250,7 @@ static IRAtom* schemeE ( MCEnv* mce, IRExpr* e )
          IRAtom      *t1, *t2, *t3, *t4;
          IRRegArray* descr      = e->Iex.GetI.descr;
          IRType equivIntTy 
-            = MC_(get_otrack_reg_array_equiv_int_type)(descr);
+            = VG_(get_otrack_reg_array_equiv_int_type)(descr);
          /* If this array is unshadowable for whatever reason, use the
             usual approximation. */
          if (equivIntTy == Ity_INVALID)
@@ -7353,7 +7354,7 @@ static IRAtom* schemeE ( MCEnv* mce, IRExpr* e )
       case Iex_RdTmp:
          return mkexpr( findShadowTmpB( mce, e->Iex.RdTmp.tmp ));
       case Iex_Get: {
-         Int b_offset = MC_(get_otrack_shadow_offset)( 
+         Int b_offset = VG_(get_otrack_shadow_offset)(
                            e->Iex.Get.offset,
                            sizeofIRType(e->Iex.Get.ty) 
                         );
@@ -7428,7 +7429,7 @@ static void do_origins_Dirty ( MCEnv* mce, IRDirty* d )
             n = gSz <= 4 ? gSz : 4;
             /* update 'curr' with maxU32 of the state slice 
                gOff .. gOff+n-1 */
-            b_offset = MC_(get_otrack_shadow_offset)(gOff, 4);
+            b_offset = VG_(get_otrack_shadow_offset)(gOff, 4);
             if (b_offset != -1) {
                /* Observe the guard expression. If it is false use 0, i.e.
                   nothing is known about the origin */
@@ -7526,7 +7527,7 @@ static void do_origins_Dirty ( MCEnv* mce, IRDirty* d )
             if (gSz == 0) break;
             n = gSz <= 4 ? gSz : 4;
             /* Write 'curr' to the state slice gOff .. gOff+n-1 */
-            b_offset = MC_(get_otrack_shadow_offset)(gOff, 4);
+            b_offset = VG_(get_otrack_shadow_offset)(gOff, 4);
             if (b_offset != -1) {
 
                /* If the guard expression evaluates to false we simply Put
@@ -7662,7 +7663,7 @@ static void schemeS ( MCEnv* mce, IRStmt* st )
          IRAtom      *t1, *t2, *t3, *t4;
          IRRegArray* descr = puti->descr;
          IRType equivIntTy
-            = MC_(get_otrack_reg_array_equiv_int_type)(descr);
+            = VG_(get_otrack_reg_array_equiv_int_type)(descr);
          /* If this array is unshadowable for whatever reason,
             generate no code. */
          if (equivIntTy == Ity_INVALID)
@@ -7734,7 +7735,7 @@ static void schemeS ( MCEnv* mce, IRStmt* st )
 
       case Ist_Put: {
          Int b_offset
-            = MC_(get_otrack_shadow_offset)(
+            = VG_(get_otrack_shadow_offset)(
                  st->Ist.Put.offset,
                  sizeofIRType(typeOfIRExpr(mce->sb->tyenv, st->Ist.Put.data))
               );

@@ -169,10 +169,6 @@ void MC_(handle_resizeInPlace)(ThreadId tid, Addr p,
 /*--- Origin tracking translate-time support               ---*/
 /*------------------------------------------------------------*/
 
-/* See detailed comments in mc_machine.c. */
-Int MC_(get_otrack_shadow_offset) ( Int offset, Int szB );
-IRType MC_(get_otrack_reg_array_equiv_int_type) ( IRRegArray* arr );
-
 /* Constants which are used as the lowest 2 bits in origin tags.
    
    An origin tag comprises an upper 30-bit ECU field and a lower 2-bit
