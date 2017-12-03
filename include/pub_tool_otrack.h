@@ -32,7 +32,11 @@
 #include "pub_tool_basics.h"   // VG_ macro
 #include "pub_tool_tooliface.h"
 
-/* See detailed comments in mc_otrack.c. */
+/* The origin tracking needs to store 32-bit origin tracks even for smaller values.
+ * Thus, the layout of the second guest shadow (the one used for otrack) must be remapped.
+ */
+
+/* See detailed comments in m_otrack.c. */
 Int VG_(get_otrack_shadow_offset) ( Int offset, Int szB );
 IRType VG_(get_otrack_reg_array_equiv_int_type) ( IRRegArray* arr );
 

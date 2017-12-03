@@ -20,3 +20,6 @@ EXTRA_DIST += shift.vgtest shift.stderr.exp
 
 check_PROGRAMS += bitpack
 EXTRA_DIST += bitpack.vgtest bitpack.stderr.exp
+
+check_PROGRAMS += origins
+EXTRA_DIST += origins.vgtest origins.stderr.exp

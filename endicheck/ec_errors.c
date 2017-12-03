@@ -3,6 +3,7 @@
 #include <pub_tool_errormgr.h>
 #include <pub_tool_options.h>
 #include <pub_tool_libcprint.h>
+#include <pub_tool_execontext.h>
 
 Bool EC_(opt_check_syscalls);
 Bool EC_(opt_allow_unknown) = True;
@@ -18,18 +19,22 @@ typedef struct {
          SizeT start;
          SizeT size;
          Ec_Shadow wanted_endianity;
+         Ec_Otag origin;
       } range_endianity;
    };
    const char* source_msg;
 } Ec_Error;
 
-static void report_range(ThreadId tid, Addr base, SizeT start, SizeT end, Ec_Shadow wanted, const char* source_msg)
+static void report_range(
+      ThreadId tid, Addr base, SizeT start, SizeT end, Ec_Shadow wanted,
+      const char* source_msg, Ec_Otag otag)
 {
    Ec_Error error;
    error.range_endianity.base = base;
    error.range_endianity.start = start;
    error.range_endianity.size = end - start;
    error.range_endianity.wanted_endianity = wanted;
+   error.range_endianity.origin = otag;
    error.source_msg = source_msg;
 
    VG_(maybe_record_error)(tid, Ec_Err_MemoryEndianity, base + start, NULL, &error);
@@ -40,29 +45,41 @@ Bool EC_(check_memory_endianity)(
 {
    if (wanted == EC_ANY)
       return True;
-   // VG_(message)(Vg_UserMsg, "Checking %lx (size %lu)\n", base, size);
+   // VG_(message)(Vg_UserMsg, "Checking %lx (size %lu)\n", base, tsize);
+
 
    tl_assert(wanted != EC_UNKNOWN);
    SizeT start = 0;
    Bool last_ok = True;
+   Ec_Endianity last_endianity = EC_UNKNOWN;
+   Ec_Otag last_origin = EC_NO_OTAG;
    Bool all_ok = True;
+   /* Go throught the memory and try to find consecutive regions of invalid endianity with the
+    * same origin.
+    */
    for(SizeT i = 0; i<size; i++) {
       Ec_Shadow shadow = EC_(get_shadow)(base + i);
       Ec_Endianity e = EC_(endianity_for_shadow)(shadow);
+      Ec_Otag origin = EC_NO_OTAG;
       Bool ok = (e == wanted) || (e == EC_ANY) || (EC_(opt_allow_unknown) && (e == EC_UNKNOWN));
-      if (last_ok != ok) {
-         if (!ok) {
-            start = i;
-         } else {
-            report_range(tid, base, start, i, wanted, source_msg);
+      if (EC_(opt_track_origins))
+         origin = EC_(get_shadow_otag)(base + i);
+
+      if (ok != last_ok || last_origin != origin) {
+         if (!last_ok) {
+            report_range(tid, base, start, i, wanted, source_msg, last_origin);
          }
+         start = i;
       }
+
       last_ok = ok;
+      last_endianity = e;
+      last_origin = origin;
       all_ok = all_ok && ok;
    }
 
    if (!last_ok)
-      report_range(tid, base, start, size, wanted, source_msg);
+      report_range(tid, base, start, size, wanted, source_msg, last_origin);
 
    return all_ok;
 }
@@ -111,21 +128,42 @@ static void print_description(const char* err_id, const char* fmt, ...)
    va_end(vargs);
 }
 
-static void print_block(const char* msg, Addr base, SizeT start, SizeT size)
+static void print_block(const char* msg, Ec_Otag origin, Addr base, SizeT start, SizeT size)
 {
    const Bool xml  = VG_(clo_xml);
+   ExeContext* origin_ctx = NULL;
+   if (EC_(opt_track_origins)) {
+      if (VG_(is_plausible_ECU)(origin)) {
+         origin_ctx = VG_(get_ExeContext_from_ECU)(origin);
+      }
+   }
+
    if (xml) {
       VG_(printf_xml)("  <addr>\n");
       VG_(printf_xml)("    <base>0x%lx</base>\n", base);
       VG_(printf_xml)("    <start>%lu</start>\n", start);
       VG_(printf_xml)("    <size>%lu</size>\n", size);
       VG_(printf_xml)("  </addr>\n");
+      if (msg)
+         VG_(printf_xml)("  <msg>%ps</msg\n", msg);
+      if (origin_ctx) {
+         VG_(printf_xml)("  <value-origin/>n");
+         VG_(pp_ExeContext)(origin_ctx);
+      }
    } else {
       if (msg)
          VG_(message)(Vg_UserMsg, "A check of block at 0x%lx was requested, with message \"%s\".\n", base, msg);
       else
          VG_(message)(Vg_UserMsg, "A check of block at 0x%lx was requested.\n", base);
       VG_(message)(Vg_UserMsg, "The endianity is invalid at bytes %lu (size %lu) in that block\n", start, size);
+      if (EC_(opt_track_origins)) {
+         if (origin_ctx) {
+            VG_(message)(Vg_UserMsg, "The value was probably created at this point:\n");
+            VG_(pp_ExeContext)(origin_ctx);
+         } else {
+            VG_(message)(Vg_UserMsg, "The origin of the value is not known.\n");
+         }
+      }
    }
 }
 
@@ -138,7 +176,7 @@ void EC_(pp_Error)(const Error* err)
       case Ec_Err_MemoryEndianity:
          print_description(err_name, "Memory does not contain data of endianity %s",
                            EC_(endianity_names)[extra->range_endianity.wanted_endianity]);
-         print_block(extra->source_msg, extra->range_endianity.base,
+         print_block(extra->source_msg, extra->range_endianity.origin, extra->range_endianity.base,
                      extra->range_endianity.start, extra->range_endianity.size);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       break;

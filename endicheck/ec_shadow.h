@@ -34,18 +34,23 @@
 #include <stdint.h>
 #include "ec_include.h"
 
-void EC_(set_shadow)(Addr addr, Ec_Shadow endianity);
-Ec_Shadow EC_(get_shadow)(Addr addr);
+typedef uint32_t Ec_Otag;
+#define EC_NO_OTAG 0
 
-void EC_(gen_shadow_store)(IRSB* out, IREndness endness, IRExpr* addr, IRExpr* data);
+void EC_(set_shadow)(Addr addr, Ec_Shadow endianity);
+void EC_(set_shadow_otag)(Addr addr, Ec_Shadow endianity, Ec_Otag tag);
+Ec_Shadow EC_(get_shadow)(Addr addr);
+Ec_Otag EC_(get_shadow_otag)(Addr addr);
+
+void EC_(gen_shadow_store)(IRSB* out, IREndness endness, IRExpr* addr, Ec_ShadowExpr shadow);
 void EC_(gen_shadow_store_guarded)(
-      IRSB* out, IREndness endness, IRExpr* addr, IRExpr* data,
+      IRSB* out, IREndness endness, IRExpr* addr, Ec_ShadowExpr data,
       IRExpr* guard);
 
-IRExpr* EC_(gen_shadow_load)(
+Ec_ShadowExpr EC_(gen_shadow_load)(
       IRSB* out, IREndness endness, IRType type, IRExpr* addr);
-IRExpr* EC_(gen_shadow_load_guarded)(
+Ec_ShadowExpr EC_(gen_shadow_load_guarded)(
       IRSB* out, IREndness endness, IRType type, IRExpr* addr,
-      IRLoadGOp cvt, IRExpr* guard, IRExpr* alt);
+      IRLoadGOp cvt, IRExpr* guard, Ec_ShadowExpr alt);
 
 #endif
