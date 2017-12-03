@@ -77,14 +77,14 @@ IRExpr* EC_(const_sizet)(SizeT size)
 static Bool has_endianity(IRType ty)
 {
    switch(ty) {
-      case Ity_I1:
-      case Ity_F128:
+      case Ity_F128: /* We always known the endianity is native */
       case Ity_F64:
       case Ity_F32:
       case Ity_F16:
       case Ity_D64:
       case Ity_D128:
       case Ity_D32:
+      case Ity_I1:   /* We don't really care */
          return False;
 
       case Ity_I8: /* yes, it can have endianess attached, although by default it is ANY */
@@ -899,7 +899,7 @@ static void shadow_store(Ec_Env *env, IREndness endianess, IRExpr* addr, IRExpr*
    if (has_endianity(type)) {
       shadow = expr2shadow(env, value);
    } else {
-      shadow.ebits = mk_shadow_vector(env, type, EC_ANY);
+      shadow.ebits = mk_shadow_vector(env, type, EC_NATIVE);
       shadow.origin = EC_NO_OTAG;
    }
 
