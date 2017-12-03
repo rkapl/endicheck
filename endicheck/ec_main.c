@@ -1043,9 +1043,8 @@ static void EC_(fini)(Int exitcode)
 }
 
 #define ECRQ_DUMP_ROW_SIZE 40
-void EC_(dump_mem)(Addr start, SizeT size)
+void EC_(dump_mem_noheader)(Addr start, SizeT size)
 {
-   VG_(message)(Vg_UserMsg, "Memory endianity dump (legend: Undefined, Native, Target, Any, - Empty):\n");
    for(size_t i = 0; i<size; i += ECRQ_DUMP_ROW_SIZE) {
       char row[ECRQ_DUMP_ROW_SIZE*2 + 1];
       size_t row_size = size - i;
@@ -1058,8 +1057,14 @@ void EC_(dump_mem)(Addr start, SizeT size)
       }
       row[row_size*2] = 0;
 
-      VG_(message)(Vg_UserMsg, "%p: %s\n", (void*)(start + i), row);
+      VG_(message)(Vg_UserMsg, "   %p: %s\n", (void*)(start + i), row);
    }
+}
+
+void EC_(dump_mem)(Addr start, SizeT size)
+{
+   VG_(message)(Vg_UserMsg, "Memory endianity dump (legend: Undefined, Native, Target, Any, - Empty):\n");
+   EC_(dump_mem_noheader)(start, size);
    VG_(message)(Vg_UserMsg, "\n");
 }
 

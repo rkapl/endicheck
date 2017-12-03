@@ -51,7 +51,6 @@ Bool EC_(check_memory_endianity)(
    tl_assert(wanted != EC_UNKNOWN);
    SizeT start = 0;
    Bool last_ok = True;
-   Ec_Endianity last_endianity = EC_UNKNOWN;
    Ec_Otag last_origin = EC_NO_OTAG;
    Bool all_ok = True;
    /* Go throught the memory and try to find consecutive regions of invalid endianity with the
@@ -73,7 +72,6 @@ Bool EC_(check_memory_endianity)(
       }
 
       last_ok = ok;
-      last_endianity = e;
       last_origin = origin;
       all_ok = all_ok && ok;
    }
@@ -152,10 +150,15 @@ static void print_block(const char* msg, Ec_Otag origin, Addr base, SizeT start,
       }
    } else {
       if (msg)
-         VG_(message)(Vg_UserMsg, "A check of block at 0x%lx was requested, with message \"%s\".\n", base, msg);
+         VG_(message)(Vg_UserMsg,
+            "Problem was found in block %p (named %s) at offset %lu, size %lu:\n",
+            (void*)base, msg, start, size);
       else
-         VG_(message)(Vg_UserMsg, "A check of block at 0x%lx was requested.\n", base);
-      VG_(message)(Vg_UserMsg, "The endianity is invalid at bytes %lu (size %lu) in that block\n", start, size);
+         VG_(message)(Vg_UserMsg,
+            "Problem was found in block %p at offset %lu, size %lu:\n",
+            (void*)base, start, size);
+      EC_(dump_mem_noheader)(base + start, size);
+
       if (EC_(opt_track_origins)) {
          if (origin_ctx) {
             VG_(message)(Vg_UserMsg, "The value was probably created at this point:\n");
@@ -164,6 +167,8 @@ static void print_block(const char* msg, Ec_Otag origin, Addr base, SizeT start,
             VG_(message)(Vg_UserMsg, "The origin of the value is not known.\n");
          }
       }
+
+      VG_(message)(Vg_UserMsg, "The endianity check was requested here:\n");
    }
 }
 
@@ -174,7 +179,7 @@ void EC_(pp_Error)(const Error* err)
    const HChar* err_name = EC_(get_error_name)(err);
    switch(kind) {
       case Ec_Err_MemoryEndianity:
-         print_description(err_name, "Memory does not contain data of endianity %s",
+         print_description(err_name, "Memory does not contain data of %s endianity",
                            EC_(endianity_names)[extra->range_endianity.wanted_endianity]);
          print_block(extra->source_msg, extra->range_endianity.origin, extra->range_endianity.base,
                      extra->range_endianity.start, extra->range_endianity.size);

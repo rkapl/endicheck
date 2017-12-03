@@ -1,9 +1,9 @@
 
 Memory endianity dump (legend: Undefined, Native, Target, Any, - Empty):
-0x........: N-T T T 
+   0x........: N-T T T 
 
 Memory endianity dump (legend: Undefined, Native, Target, Any, - Empty):
-0x........: T T T N-
+   0x........: T T T N-
 
 
 ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

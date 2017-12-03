@@ -55,6 +55,7 @@ extern Bool EC_(opt_track_origins);
 Ec_Endianity EC_(endianity_for_shadow)(Ec_Shadow shadow);
 Bool EC_(is_empty_for_shadow) (Ec_Shadow shadow);
 IRExpr* EC_(const_sizet)(SizeT size);
+void EC_(dump_mem_noheader)(Addr start, SizeT size);
 void EC_(dump_mem)(Addr start, SizeT size);
 
 extern const char EC_(endianity_codes)[];
