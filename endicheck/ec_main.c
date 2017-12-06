@@ -356,10 +356,10 @@ static IRExpr* narrow_to_32(Ec_Env* env, IRExpr* from) {
    }
 }
 
-static IRExpr* default_shadow_for_type(Ec_Env* env, IRType expr_type)
+static Ec_ShadowExpr default_shadow_for_type(Ec_Env* env, IRType expr_type)
 {
    tl_assert(has_endianity(expr_type));
-   return mk_shadow_vector(env, type2ebit(expr_type), default_endianity(expr_type));
+   return add_current_otag(env, mk_shadow_vector(env, type2ebit(expr_type), default_endianity(expr_type)));
 }
 
 /* Returns a default shadow value (usually EC_NATIVE) for the given
@@ -368,7 +368,7 @@ static IRExpr* default_shadow_for_type(Ec_Env* env, IRType expr_type)
 static Ec_ShadowExpr default_shadow(Ec_Env* env, IRExpr* expr)
 {
    IRType expr_type = typeOfIRExpr(env->tyenv, expr);
-   return add_current_otag(env, default_shadow_for_type(env, expr_type));
+   return default_shadow_for_type(env, expr_type);
 }
 
 static Ec_ShadowExpr expr2shadow(Ec_Env* env, IRExpr* expr);
@@ -932,9 +932,81 @@ static void shadow_dirty(Ec_Env* env, IRDirty* dirty)
 
    IRType type = typeOfIRTemp(env->tyenv, dirty->tmp);
    if (has_endianity(type)) {
-      stmt(env, IRStmt_WrTmp(temp2ebits(env, dirty->tmp), default_shadow_for_type(env, type)));
+      Ec_ShadowExpr shadow = default_shadow_for_type(env, type);
+      stmt(env, IRStmt_WrTmp(temp2ebits(env, dirty->tmp), shadow.ebits));
       if (EC_(opt_track_origins))
-         stmt(env, IRStmt_WrTmp(temp2otag(env, dirty->tmp), current_otag(env)));
+         stmt(env, IRStmt_WrTmp(temp2otag(env, dirty->tmp), shadow.origin));
+   }
+}
+
+static VG_REGPARM(2) void helper_set_default_shadow_mem(Addr base, SizeT size)
+{
+   if (EC_(opt_track_origins)) {
+      ThreadId tid = VG_(get_running_tid)();
+      ExeContext* here = VG_(record_ExeContext)(tid, 0);
+      tl_assert(here);
+      Ec_Otag otag = VG_(get_ECU_from_ExeContext)(here);
+      tl_assert(VG_(is_plausible_ECU)(otag));
+
+      for(size_t i = 0; i<size; i++)
+         EC_(set_shadow_otag)(base + i, EC_NATIVE, otag);
+   } else {
+      for(size_t i = 0; i<size; i++)
+         EC_(set_shadow)(base + i, EC_NATIVE);
+   }
+}
+
+static void shadow_cas(Ec_Env* env, IRCAS* details)
+{
+   /* It's doubtful that CAS will be used to handle data where endianity matters. For now,
+    * just mark everything that the CAS touches as native.
+    */
+   IRType base_type = typeOfIRTemp(env->tyenv, details->oldLo);
+   tl_assert(!!details->expdHi == !!details->dataHi);
+   if (details->expdHi) {
+      tl_assert(base_type == typeOfIRTemp(env->tyenv, details->oldHi));
+   }
+
+   if (!has_endianity(base_type))
+      return;
+
+   {
+      Ec_ShadowExpr lo_shadow = default_shadow_for_type(env, base_type);
+      stmt(env, IRStmt_WrTmp(temp2ebits(env, details->oldLo), lo_shadow.ebits));
+      if (EC_(opt_track_origins))
+         stmt(env, IRStmt_WrTmp(temp2otag(env, details->oldLo), lo_shadow.origin));
+   }
+
+   if (details->expdHi) {
+      Ec_ShadowExpr hi_shadow = default_shadow_for_type(env, base_type);
+      stmt(env, IRStmt_WrTmp(temp2ebits(env, details->oldHi), hi_shadow.ebits));
+      if (EC_(opt_track_origins))
+         stmt(env, IRStmt_WrTmp(temp2otag(env, details->oldHi), hi_shadow.origin));
+   }
+   SizeT mem_size = sizeofIRType(base_type);
+   if (details->dataHi)
+      mem_size *= 2;
+   stmt(env, IRStmt_Dirty(unsafeIRDirty_0_N(
+         2, "ec_set_default_shadow_mem", VG_(fnptr_to_fnentry)(helper_set_default_shadow_mem),
+         mkIRExprVec_2(details->addr, EC_(const_sizet)(mem_size)))));
+}
+
+static void shadow_llsc(Ec_Env* env, IRTemp result, IREndness end, IRExpr* addr, IRExpr* storedata)
+{
+   /* Same as CAS -- just mark the data as native. */
+   if (storedata) {
+      tl_assert(!has_endianity(typeOfIRTemp(env->tyenv, result)));
+      stmt(env, IRStmt_Dirty(unsafeIRDirty_0_N(
+            2, "ec_set_default_shadow_mem", VG_(fnptr_to_fnentry)(helper_set_default_shadow_mem),
+            mkIRExprVec_2(addr, EC_(const_sizet)(sizeofIRType(typeOfIRExpr(env->tyenv, storedata)))))));
+   } else {
+      IRType type = typeOfIRTemp(env->tyenv, result);
+      if (!has_endianity(type))
+         return;
+      Ec_ShadowExpr shadow = default_shadow_for_type(env, type);
+      stmt(env, IRStmt_WrTmp(temp2ebits(env, result), shadow.ebits));
+      if (EC_(opt_track_origins))
+         stmt(env, IRStmt_WrTmp(temp2otag(env, result), shadow.origin));
    }
 }
 
@@ -1015,8 +1087,15 @@ static IRSB* EC_(instrument) (
                   st->Ist.StoreG.details->data, st->Ist.StoreG.details->guard);
          break;
 
-         case Ist_CAS:   /* TODO: not yet implemented */
-         case Ist_LLSC:  /* TODO: not yet implemented */
+         case Ist_CAS:
+            shadow_cas(&env, st->Ist.CAS.details);
+            break;
+         case Ist_LLSC:
+            shadow_llsc(
+                  &env, st->Ist.LLSC.result, st->Ist.LLSC.end,
+                  st->Ist.LLSC.addr, st->Ist.LLSC.storedata);
+         break;
+
          case Ist_Exit:  /* consider checking endianity of the guard expression*/
          break;
 
