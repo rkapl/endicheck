@@ -1272,6 +1272,8 @@ static void EC_(pre_clo_init)(void)
    VG_(needs_client_requests)(
             EC_(client_request));
    VG_(needs_xml_output)();
+
+   EC_(shadow_init)();
 }
 
 VG_DETERMINE_INTERFACE_VERSION(EC_(pre_clo_init))

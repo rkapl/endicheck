@@ -35,6 +35,7 @@
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_machine.h"
 #include "pub_tool_libcprint.h"
+#include "pub_tool_oset.h"
 #include <stdbool.h>
 
 #define EC_SHADOW_HEAPID "ec_shadow"
@@ -46,6 +47,7 @@
 /* Just handle the first 128G. */
 /* TODO: add auxiliary tables like memcheck */
 #  define EC_PRIMARY_BITS  21
+#  define EC_HAS_AUXMAP
 #endif
 
 #define EC_PRIMARY_SIZE (1 << EC_PRIMARY_BITS)
@@ -71,16 +73,56 @@ typedef struct Ec_Primary {
    Ec_Secondary *entries[EC_PRIMARY_SIZE];
 } Ec_Primary;
 
-Ec_Primary shadow_table;
+static Ec_Primary shadow_table;
 
-static Ec_Secondary* get_secondary(Addr addr)
+#ifdef EC_HAS_AUXMAP
+typedef struct {
+   Addr base;
+   Ec_Secondary* secondary;
+} Ec_AuxEntry;
+/* For simplicity, we don't yet have the L1 and L2 maps like MC does.
+ * Otherwise, this is simply duplicated from MC */
+static OSet* shadow_aux_table = NULL;
+#endif
+
+void EC_(shadow_init)(void)
 {
-   addr >>= EC_SECONDARY_BITS;
+#ifdef EC_HAS_AUXMAP
+   shadow_aux_table = VG_(OSetGen_Create)(
+            offsetof(Ec_AuxEntry, base), NULL,
+            VG_(malloc), "ec_shadow_auxmap", VG_(free));
+#endif
+}
+
+static Ec_Secondary* alloc_secondary(void)
+{
+   SizeT secondary_size = EC_(opt_track_origins) ? sizeof(Ec_SecondaryOtag) : sizeof(Ec_Secondary);
+   return VG_(calloc)(EC_SHADOW_HEAPID, 1, secondary_size);
+}
+
+static Ec_Secondary* get_secondary(Addr orig_addr)
+{
+   Addr addr = orig_addr >> EC_SECONDARY_BITS;
+#ifdef EC_HAS_AUXMAP
+   if ((addr & ~EC_PRIMARY_MASK) != 0) {
+      Ec_AuxEntry key;
+      key.base = addr;
+      key.secondary = NULL;
+      Ec_AuxEntry* aux = VG_(OSetGen_Lookup)(shadow_aux_table, &key);
+      if (!aux) {
+         aux = (Ec_AuxEntry*) VG_(OSetGen_AllocNode)(shadow_aux_table, sizeof(Ec_AuxEntry));
+         aux->base = addr;
+         aux->secondary = alloc_secondary();
+         VG_(OSetGen_Insert)(shadow_aux_table, aux);
+      }
+      return aux->secondary;
+   }
+#else
    tl_assert((addr & ~EC_PRIMARY_MASK) == 0);
+#endif
    Ec_Secondary *sec = shadow_table.entries[addr];
    if (!sec) {
-      SizeT secondary_size = EC_(opt_track_origins) ? sizeof(Ec_SecondaryOtag) : sizeof(Ec_Secondary);
-      sec = VG_(calloc)(EC_SHADOW_HEAPID, 1, secondary_size);
+      sec = alloc_secondary();
       shadow_table.entries[addr] = sec;
    }
    return sec;

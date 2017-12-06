@@ -36,7 +36,7 @@
 
 typedef uint32_t Ec_Otag;
 #define EC_NO_OTAG 0
-
+void EC_(shadow_init)(void);
 void EC_(set_shadow)(Addr addr, Ec_Shadow endianity);
 void EC_(set_shadow_otag)(Addr addr, Ec_Shadow endianity, Ec_Otag tag);
 Ec_Shadow EC_(get_shadow)(Addr addr);
