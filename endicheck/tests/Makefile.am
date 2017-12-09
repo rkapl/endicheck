@@ -23,3 +23,6 @@ EXTRA_DIST += bitpack.vgtest bitpack.stderr.exp
 
 check_PROGRAMS += origins
 EXTRA_DIST += origins.vgtest origins.stderr.exp
+
+check_PROGRAMS += protection
+EXTRA_DIST += protection.vgtest protection.stderr.exp

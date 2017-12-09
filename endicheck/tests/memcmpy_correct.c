@@ -21,5 +21,5 @@ int main() {
 
    memcpy(&ex2, &ex, sizeof(ex));
 
-   return EC_CHECK_ENDIANITY(&ex2, sizeof(ex2), EC_TARGET, NULL);
+   return EC_CHECK_ENDIANITY(&ex2, sizeof(ex2), NULL);
 }

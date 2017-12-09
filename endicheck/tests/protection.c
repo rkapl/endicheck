@@ -4,8 +4,8 @@
 
 struct ex
 {
-   uint8_t native_byte;
-   uint32_t native_marked;
+   uint32_t native_wrong;
+   uint32_t native_target;
 };
 
 static uint32_t htobe32(uint32_t param) {
@@ -15,8 +15,10 @@ static uint32_t htobe32(uint32_t param) {
 
 int main() {
    struct ex ex;
-   ex.native_byte = 0xDD;
-   ex.native_marked = htobe32(0xDEADBEEF);
+   EC_PROTECT_REGION(&ex, sizeof(ex));
+   ex.native_wrong = 0xDEADBEEF;
+   ex.native_target = htobe32(0xDEADBEEF);
+   EC_UNPROTECT_REGION(&ex, sizeof(ex));
 
-   return EC_CHECK_ENDIANITY(&ex, sizeof(ex), NULL);
+   return 0;
 }

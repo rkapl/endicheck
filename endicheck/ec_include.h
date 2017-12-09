@@ -39,8 +39,13 @@
 
 #define EC_(str)    VGAPPEND(vgEndiCheck_,str)
 
-#define EC_EMPTY_TAG 0x8
-#define EC_NATIVE_EMPTY (EC_NATIVE + EC_EMPTY_TAG)
+/* The byte contains zero created by shifting or widening */
+#define EC_EMPTY_TAG 0x4
+/* The byte is protected and may contain only a certain endianity.
+ * Only the shadow memory may be marked as such, not values.
+ */
+#define EC_PROTECTED_TAG 0x8
+#define EC_NATIVE_EMPTY (EC_NATIVE | EC_EMPTY_TAG)
 typedef uint8_t Ec_Shadow;
 
 /* A tuple of endianity tag and origin tag */
@@ -51,10 +56,10 @@ typedef struct {
 
 extern Bool EC_(opt_guess_const_size);
 extern Bool EC_(opt_track_origins);
+extern Bool EC_(opt_protection);
 
 Ec_Endianity EC_(endianity_for_shadow)(Ec_Shadow shadow);
 Bool EC_(is_empty_for_shadow) (Ec_Shadow shadow);
-IRExpr* EC_(const_sizet)(SizeT size);
 void EC_(dump_mem_noheader)(Addr start, SizeT size);
 void EC_(dump_mem)(Addr start, SizeT size);
 

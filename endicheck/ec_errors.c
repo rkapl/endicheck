@@ -1,15 +1,18 @@
 #include "ec_errors.h"
 #include "ec_shadow.h"
-#include <pub_tool_errormgr.h>
-#include <pub_tool_options.h>
-#include <pub_tool_libcprint.h>
-#include <pub_tool_execontext.h>
+#include "pub_tool_errormgr.h"
+#include "pub_tool_options.h"
+#include "pub_tool_libcprint.h"
+#include "pub_tool_execontext.h"
+#include "pub_tool_libcbase.h"
+#include "pub_tool_threadstate.h"
 
 Bool EC_(opt_check_syscalls);
 Bool EC_(opt_allow_unknown) = True;
 
 typedef enum  {
-   Ec_Err_MemoryEndianity
+   Ec_Err_MemoryEndianity,
+   Ec_Err_StoreEndianity,
 } Ec_ErrorKind;
 
 typedef struct {
@@ -18,37 +21,64 @@ typedef struct {
          Addr base;
          SizeT start;
          SizeT size;
-         Ec_Shadow wanted_endianity;
          Ec_Otag origin;
       } range_endianity;
+      struct {
+         Addr addr;
+         SizeT store_size;
+         UChar stored_data[EC_MAX_STORE];
+      } store;
    };
    const char* source_msg;
 } Ec_Error;
 
 static void report_range(
-      ThreadId tid, Addr base, SizeT start, SizeT end, Ec_Shadow wanted,
-      const char* source_msg, Ec_Otag otag)
+      ThreadId tid, Addr base, SizeT start, SizeT end, const char* source_msg, Ec_Otag otag)
 {
    Ec_Error error;
    error.range_endianity.base = base;
    error.range_endianity.start = start;
    error.range_endianity.size = end - start;
-   error.range_endianity.wanted_endianity = wanted;
    error.range_endianity.origin = otag;
    error.source_msg = source_msg;
 
    VG_(maybe_record_error)(tid, Ec_Err_MemoryEndianity, base + start, NULL, &error);
 }
 
-Bool EC_(check_memory_endianity)(
-      ThreadId tid, Addr base, SizeT size, Ec_Shadow wanted, const char* source_msg)
+static Bool is_endianity_ok(Ec_Endianity e)
 {
-   if (wanted == EC_ANY)
-      return True;
+   return (e == EC_TARGET) || (e == EC_ANY) || (EC_(opt_allow_unknown) && (e == EC_UNKNOWN));
+}
+
+void EC_(check_store)(Addr addr, SizeT size, Ec_Shadow *stored)
+{
+   tl_assert(EC_(opt_protection));
+   tl_assert(size <= EC_MAX_STORE);
+   Bool problem = False;
+   for(SizeT i = 0; i<size; i++) {
+      Bool is_protected = EC_(is_protected)(addr + i);
+      Ec_Endianity e = EC_(endianity_for_shadow(stored[i]));
+      if (is_protected && !is_endianity_ok(e))
+         problem = True;
+   }
+
+   if (problem) {
+      Ec_Error error;
+      error.store.addr = addr;
+      error.store.store_size = size;
+      VG_(memcpy)(error.store.stored_data, stored, size);
+      error.source_msg = NULL;
+
+      VG_(maybe_record_error)(VG_(get_running_tid)(), Ec_Err_StoreEndianity, addr, NULL, &error);
+   }
+
+}
+
+Bool EC_(check_memory_endianity)(
+      ThreadId tid, Addr base, SizeT size, const char* source_msg)
+{  
    // VG_(message)(Vg_UserMsg, "Checking %lx (size %lu)\n", base, tsize);
 
-
-   tl_assert(wanted != EC_UNKNOWN);
    SizeT start = 0;
    Bool last_ok = True;
    Ec_Otag last_origin = EC_NO_OTAG;
@@ -60,13 +90,13 @@ Bool EC_(check_memory_endianity)(
       Ec_Shadow shadow = EC_(get_shadow)(base + i);
       Ec_Endianity e = EC_(endianity_for_shadow)(shadow);
       Ec_Otag origin = EC_NO_OTAG;
-      Bool ok = (e == wanted) || (e == EC_ANY) || (EC_(opt_allow_unknown) && (e == EC_UNKNOWN));
+      Bool ok = is_endianity_ok(e);
       if (EC_(opt_track_origins))
          origin = EC_(get_shadow_otag)(base + i);
 
       if (ok != last_ok || last_origin != origin) {
          if (!last_ok) {
-            report_range(tid, base, start, i, wanted, source_msg, last_origin);
+            report_range(tid, base, start, i, source_msg, last_origin);
          }
          start = i;
       }
@@ -77,7 +107,7 @@ Bool EC_(check_memory_endianity)(
    }
 
    if (!last_ok)
-      report_range(tid, base, start, size, wanted, source_msg, last_origin);
+      report_range(tid, base, start, size, source_msg, last_origin);
 
    return all_ok;
 }
@@ -98,8 +128,10 @@ Bool EC_(eq_Error) ( VgRes res, const Error* e1, const Error* e2)
       case Ec_Err_MemoryEndianity:
          return eq_extra(range_endianity.base)
                && eq_extra(range_endianity.start)
-               && eq_extra(range_endianity.size)
-               && eq_extra(range_endianity.wanted_endianity);
+               && eq_extra(range_endianity.size);
+      case Ec_Err_StoreEndianity:
+         return eq_extra(store.addr)
+               && eq_extra(store.store_size);
    default:
       VG_(tool_panic)("unknown error kind");
    }
@@ -179,11 +211,14 @@ void EC_(pp_Error)(const Error* err)
    const HChar* err_name = EC_(get_error_name)(err);
    switch(kind) {
       case Ec_Err_MemoryEndianity:
-         print_description(err_name, "Memory does not contain data of %s endianity",
-                           EC_(endianity_names)[extra->range_endianity.wanted_endianity]);
+         print_description(err_name, "Memory does not contain data of Target endianity");
          print_block(extra->source_msg, extra->range_endianity.origin, extra->range_endianity.base,
                      extra->range_endianity.start, extra->range_endianity.size);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+      break;
+   case Ec_Err_StoreEndianity:
+      print_description(err_name, "Storing data of invalid endianity into protected region");
+      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       break;
    }
 }
@@ -194,7 +229,8 @@ const HChar* EC_(get_error_name)(const Error* err)
    switch(kind) {
       case Ec_Err_MemoryEndianity:
          return "MemoryEndianity";
-      break;
+      case Ec_Err_StoreEndianity:
+         return "StoreEndianity";
    default:
       VG_(tool_panic)("unknown error kind");
       break;

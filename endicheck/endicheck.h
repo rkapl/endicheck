@@ -72,7 +72,9 @@
 typedef enum {
    EC_USERREQ__DUMP_MEM = VG_USERREQ_TOOL_BASE('E','C'),
    EC_USERREQ__MARK_ENDIANITY,
-   EC_USERREQ__CHECK_ENDIANITY
+   EC_USERREQ__CHECK_ENDIANITY,
+   EC_USERREQ__PROTECT_REGION,
+   EC_USERREQ__UNPROTECT_REGION
 } Ec_ClientRequest;
 
 typedef enum {
@@ -85,8 +87,13 @@ typedef enum {
 #define EC_MARK_ENDIANITY(start, size, endianity) \
    VALGRIND_DO_CLIENT_REQUEST_EXPR(0, EC_USERREQ__MARK_ENDIANITY, (start), (size), (endianity), 0, 0)
 
-#define EC_CHECK_ENDIANITY(start, size, endianity, msg) \
-   VALGRIND_DO_CLIENT_REQUEST_EXPR(0, EC_USERREQ__CHECK_ENDIANITY, (start), (size), (endianity), (msg), 0)
+#define EC_CHECK_ENDIANITY(start, size, msg) \
+   VALGRIND_DO_CLIENT_REQUEST_EXPR(0, EC_USERREQ__CHECK_ENDIANITY, (start), (size), (msg), 0, 0)
 
+#define EC_PROTECT_REGION(start, size) \
+   VALGRIND_DO_CLIENT_REQUEST_EXPR(0, EC_USERREQ__PROTECT_REGION, (start), (size), 0, 0, 0)
+
+#define EC_UNPROTECT_REGION(start, size) \
+   VALGRIND_DO_CLIENT_REQUEST_EXPR(0, EC_USERREQ__UNPROTECT_REGION, (start), (size), 0, 0, 0)
 
 #endif

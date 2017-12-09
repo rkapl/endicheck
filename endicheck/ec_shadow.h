@@ -36,10 +36,15 @@
 
 typedef uint32_t Ec_Otag;
 #define EC_NO_OTAG 0
+#define EC_MAX_STORE 16
+
 void EC_(shadow_init)(void);
+void EC_(set_protected)(Addr addr, SizeT size, Bool protected);
+Bool EC_(is_protected)(Addr addr);
 void EC_(set_shadow)(Addr addr, Ec_Shadow endianity);
-void EC_(set_shadow_otag)(Addr addr, Ec_Shadow endianity, Ec_Otag tag);
+void EC_(set_shadow_otag)(Addr addr, Ec_Otag tag);
 Ec_Shadow EC_(get_shadow)(Addr addr);
+Ec_Shadow EC_(get_shadow_with_protection)(Addr addr);
 Ec_Otag EC_(get_shadow_otag)(Addr addr);
 
 void EC_(gen_shadow_store)(IRSB* out, IREndness endness, IRExpr* addr, Ec_ShadowExpr shadow);

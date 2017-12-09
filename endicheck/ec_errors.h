@@ -37,7 +37,8 @@ extern Bool EC_(opt_check_syscalls);
 extern Bool EC_(opt_allow_unknown);
 
 Bool EC_(check_memory_endianity)(
-      ThreadId tid, Addr base, SizeT size, Ec_Shadow wanted, const char* source_msg);
+      ThreadId tid, Addr base, SizeT size, const char* source_msg);
+void EC_(check_store)(Addr addr, SizeT size, Ec_Shadow* stored);
 
 Bool EC_(eq_Error)(VgRes res, const Error* e1, const Error* e2 );
 void EC_(before_pp_Error)(const Error* err);

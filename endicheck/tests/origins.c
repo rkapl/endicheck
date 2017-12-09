@@ -14,7 +14,7 @@ int main() {
    uint32_t copy;
 
    memcpy(&copy, &native, sizeof(native));
-   EC_CHECK_ENDIANITY(&copy, sizeof(copy), EC_TARGET, NULL);
+   EC_CHECK_ENDIANITY(&copy, sizeof(copy), NULL);
 
    return 0;
 }

@@ -12,5 +12,5 @@ int main() {
    uint32_t ex = htobe32(0xDEADBEEF) ^ htobe32(0x12345678);
    assert(ex == htobe32(0xDEADBEEF ^ 0x12345678));
 
-   return EC_CHECK_ENDIANITY(&ex, sizeof(ex), EC_TARGET, NULL);
+   return EC_CHECK_ENDIANITY(&ex, sizeof(ex), NULL);
 }

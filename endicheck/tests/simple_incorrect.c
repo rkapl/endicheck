@@ -13,5 +13,5 @@ int main() {
    ex.native_byte = 0xDD;
    ex.native_marked = 0xDEADBEEF;
 
-   return EC_CHECK_ENDIANITY(&ex, sizeof(ex), EC_TARGET, NULL);
+   return EC_CHECK_ENDIANITY(&ex, sizeof(ex), NULL);
 }

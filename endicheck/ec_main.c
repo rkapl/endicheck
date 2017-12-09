@@ -41,6 +41,7 @@
 #include "ec_include.h"
 #include "ec_shadow.h"
 #include "ec_errors.h"
+#include "ec_util.h"
 #include <stddef.h>
 
 #define EC_INSTRUMENT_HEAPID "ec_instrument"
@@ -62,16 +63,6 @@ static void EC_(post_clo_init)(void)
 
 static void stmt(Ec_Env* env, IRStmt* stmt) {
    addStmtToIRSB(env->out_sb, stmt);
-}
-
-IRExpr* EC_(const_sizet)(SizeT size)
-{
-   if (sizeof(SizeT) == 4)
-      return IRExpr_Const(IRConst_U32(size));
-   else if (sizeof(SizeT) == 8)
-      return IRExpr_Const(IRConst_U64(size));
-   else
-      VG_(tool_panic)("unknown sizeof(SizeT)");
 }
 
 static Bool has_endianity(IRType ty)
@@ -143,24 +134,6 @@ static IRType type2ebit(IRType ty)
 
       default:
          VG_(tool_panic)("endicheck unsupported IRType");
-   }
-}
-
-/* Return and IROp of correct argument size. Assume the `base` irop is the byte-sized
- * and followed with its 16,32,64 versions, as common in VEX IR */
-static IROp op_for_type(IROp base, IRType type)
-{
-   switch(type) {
-      case Ity_I8:
-         return base + 0;
-      case Ity_I16:
-         return base + 1;
-      case Ity_I32:
-         return base + 2;
-      case Ity_I64:
-         return base + 3;
-      default:
-         VG_(tool_panic)("op_for_type unsupported type");
    }
 }
 
@@ -245,26 +218,15 @@ static IRExpr* assignNew(Ec_Env* env, IRExpr* expr)
    return IRExpr_RdTmp(tmp);
 }
 
-static inline ULong mk_shadow(Ec_Env* env,int length, Ec_Shadow e)
-{
-   tl_assert(length > 0 && length <= 8);
-   ULong acc = 0;
-   for (int i = 0; i<length; i++) {
-      acc <<= 8;
-      acc |= e;
-   }
-   return acc;
-}
-
 static IRExpr* mk_shadow_i128(Ec_Env* env,Ec_Shadow endianity)
 {
-   IRExpr* part = IRExpr_Const(IRConst_U64(mk_shadow(env, 8, endianity)));
+   IRExpr* part = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, endianity)));
    return assignNew(env, IRExpr_Binop(Iop_64HLto128, part, part));
 }
 
 static IRExpr* mk_shadow_v128(Ec_Env* env,Ec_Shadow endianity)
 {
-   IRExpr* part = IRExpr_Const(IRConst_U64(mk_shadow(env, 8, endianity)));
+   IRExpr* part = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, endianity)));
    return assignNew(env, IRExpr_Binop(Iop_64HLtoV128, part, part));
 }
 
@@ -278,13 +240,13 @@ static IRExpr* mk_shadow_vector(Ec_Env* env,IRType ty, Ec_Shadow endianity)
 {
    switch(ty) {      
       case Ity_I8:
-         return IRExpr_Const(IRConst_U8(mk_shadow(env, 1, endianity)));
+         return IRExpr_Const(IRConst_U8(EC_(mk_byte_vector)(1, endianity)));
       case Ity_I16:
-         return IRExpr_Const(IRConst_U16(mk_shadow(env, 2, endianity)));
+         return IRExpr_Const(IRConst_U16(EC_(mk_byte_vector)(2, endianity)));
       case Ity_I32:
-         return IRExpr_Const(IRConst_U32(mk_shadow(env, 4, endianity)));
+         return IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, endianity)));
       case Ity_I64:
-         return IRExpr_Const(IRConst_U64(mk_shadow(env, 8, endianity)));
+         return IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, endianity)));
       case Ity_D128:
       case Ity_F128:
       case Ity_I128:
@@ -300,60 +262,23 @@ static IRExpr* mk_shadow_vector(Ec_Env* env,IRType ty, Ec_Shadow endianity)
 
 static IRExpr* widen_to_64(Ec_Env* env, IRExpr* from)
 {
-   IRType type = typeOfIRExpr(env->tyenv, from);
-   switch(type) {
-      case Ity_I8:
-         return assignNew(env, IRExpr_Unop(Iop_8Uto64, from));
-      case Ity_I16:
-         return assignNew(env, IRExpr_Unop(Iop_16Uto64, from));
-      case Ity_I32:
-         return assignNew(env, IRExpr_Unop(Iop_32Uto64, from));
-      case Ity_I64:
-         return from;
-      default:
-         VG_(tool_panic)("widen64 not given integer");
-   }
+   return assignNew(env, EC_(change_width)(env->tyenv, from, Ity_I64));
 }
 static IRExpr* narrow_from_64(Ec_Env* env, IRExpr* from, IRType dst) {
    IRType type = typeOfIRExpr(env->tyenv, from);
    tl_assert(type == Ity_I64);
-   switch(dst) {
-      case Ity_I8:
-         return assignNew(env, IRExpr_Unop(Iop_64to8, from));
-      case Ity_I16:
-         return assignNew(env, IRExpr_Unop(Iop_64to16, from));
-      case Ity_I32:
-         return assignNew(env, IRExpr_Unop(Iop_64to32, from));
-      case Ity_I64:
-         return from;
-      default:
-         VG_(tool_panic)("narrow64 not given integer");
-   }
+   return assignNew(env, EC_(change_width)(env->tyenv, from, dst));
 }
 
 static IRExpr* widen_from_32(Ec_Env* env, IRExpr* from, IRType dst)
 {
    IRType type = typeOfIRExpr(env->tyenv, from);
    tl_assert(type == Ity_I32);
-   switch(dst) {
-      case Ity_I64:
-         return assignNew(env, IRExpr_Unop(Iop_32Uto64, from));
-      case Ity_I32:
-         return from;
-      default:
-         VG_(tool_panic)("widen64 not given integer");
-   }
+   return assignNew(env, EC_(change_width)(env->tyenv, from, dst));
 }
+
 static IRExpr* narrow_to_32(Ec_Env* env, IRExpr* from) {
-   IRType type = typeOfIRExpr(env->tyenv, from);
-   switch(type) {
-      case Ity_I64:
-         return assignNew(env, IRExpr_Unop(Iop_64to32, from));
-      case Ity_I32:
-         return from;
-      default:
-         VG_(tool_panic)("narrow64 not given integer");
-   }
+   return assignNew(env, EC_(change_width)(env->tyenv, from, Ity_I32));
 }
 
 static Ec_ShadowExpr default_shadow_for_type(Ec_Env* env, IRType expr_type)
@@ -433,42 +358,42 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
       case Iop_8Uto64:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or64,
-            IRExpr_Const(IRConst_U64(mk_shadow(env, 8, EC_NATIVE_EMPTY) & 0xFFFFFFFFFFFFFF00)),
+            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE_EMPTY) & 0xFFFFFFFFFFFFFF00)),
             inner.ebits);
          return r;
 
       case Iop_16Uto64:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or64,
-            IRExpr_Const(IRConst_U64(mk_shadow(env, 8, EC_NATIVE_EMPTY) & 0xFFFFFFFFFFFF0000)),
+            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE_EMPTY) & 0xFFFFFFFFFFFF0000)),
             inner.ebits);
          return r;
 
       case Iop_32Uto64:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or64,
-            IRExpr_Const(IRConst_U64(mk_shadow(env, 8, EC_NATIVE_EMPTY) & 0xFFFFFFFF00000000)),
+            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE_EMPTY) & 0xFFFFFFFF00000000)),
             inner.ebits);
          return r;
 
       case Iop_8Uto32:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or32,
-            IRExpr_Const(IRConst_U32(mk_shadow(env, 4, EC_NATIVE_EMPTY) & 0xFFFFFF00)),
+            IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, EC_NATIVE_EMPTY) & 0xFFFFFF00)),
             inner.ebits);
          return r;
 
       case Iop_16Uto32:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or32,
-            IRExpr_Const(IRConst_U32(mk_shadow(env, 4, EC_NATIVE_EMPTY) & 0xFFFF0000)),
+            IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, EC_NATIVE_EMPTY) & 0xFFFF0000)),
             inner.ebits);
          return r;
 
       case Iop_8Uto16:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or16,
-            IRExpr_Const(IRConst_U16(mk_shadow(env, 2, EC_NATIVE_EMPTY) & 0xFF00)),
+            IRExpr_Const(IRConst_U16(EC_(mk_byte_vector)(2, EC_NATIVE_EMPTY) & 0xFF00)),
             inner.ebits);
          return r;
 
@@ -499,16 +424,16 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
 static void split_empty_tags(Ec_Env* env, IRExpr* from, IRExpr** endianess, IRExpr** tags)
 {
    IRType type = typeOfIRExpr(env->tyenv, from);
-   *endianess = assignNew(env, IRExpr_Binop(op_for_type(Iop_And8, type), mk_shadow_vector(env, type, ~EC_EMPTY_TAG), from));
-   *tags = assignNew(env, IRExpr_Binop(op_for_type(Iop_And8, type), mk_shadow_vector(env, type, EC_EMPTY_TAG), from));
+   *endianess = assignNew(env, IRExpr_Binop(EC_(op_for_type)(Iop_And8, type), mk_shadow_vector(env, type, ~EC_EMPTY_TAG), from));
+   *tags = assignNew(env, IRExpr_Binop(EC_(op_for_type)(Iop_And8, type), mk_shadow_vector(env, type, EC_EMPTY_TAG), from));
 }
 
 typedef UChar shadow_vector __attribute__ ((vector_size (8)));
 static VG_REGPARM(2) ULong helper_combine_or_shadow(ULong a_shadow, ULong b_shadow)
 {
    /* hopefully the compiler will recognize these are constants */
-   ULong tag_mask = mk_shadow(NULL, 8, EC_EMPTY_TAG);
-   ULong native = mk_shadow(NULL, 8, EC_NATIVE);
+   ULong tag_mask = EC_(mk_byte_vector)(8, EC_EMPTY_TAG);
+   ULong native = EC_(mk_byte_vector)(8, EC_NATIVE);
 
    /* True if both cells are full */
    ULong nempty_intersection = (~a_shadow & ~b_shadow) & tag_mask;
@@ -562,16 +487,16 @@ static Ec_ShadowExpr bitop2shadow(Ec_Env* env, IRExpr* expr)
    split_empty_tags(env, arg1s, &arg1se, &arg1st);
    IRExpr* arg2s = assignNew(env, expr2shadow(env, expr->Iex.Binop.arg2).ebits);
    split_empty_tags(env, arg2s, &arg2se, &arg2st);
-   IRExpr* are_equal = assignNew(env, IRExpr_Binop(op_for_type(Iop_CmpEQ8, type), arg1st, arg2st));
+   IRExpr* are_equal = assignNew(env, IRExpr_Binop(EC_(op_for_type)(Iop_CmpEQ8, type), arg1st, arg2st));
 
    if (expr->Iex.Binop.op >= Iop_Xor8 && expr->Iex.Binop.op <= Iop_Xor64) {
       /* There is no sensible ebit combination rule for for XOR */
       return add_current_otag(env, IRExpr_ITE(are_equal, arg1s, default_shadow(env, expr).ebits));
    } else if (expr->Iex.Binop.op >= Iop_And8 && expr->Iex.Binop.op <= Iop_And64) {
       /* The empty tags are ORed together */
-      IRExpr* result_tags = assignNew(env, IRExpr_Binop(op_for_type(Iop_Or8, type), arg1st, arg2st));
+      IRExpr* result_tags = assignNew(env, IRExpr_Binop(EC_(op_for_type)(Iop_Or8, type), arg1st, arg2st));
       IRExpr* shadow = assignNew(env, IRExpr_ITE(are_equal, arg1s, default_shadow(env, expr).ebits));
-      return add_current_otag(env, IRExpr_Binop(op_for_type(Iop_Or8, type), shadow, result_tags));
+      return add_current_otag(env, IRExpr_Binop(EC_(op_for_type)(Iop_Or8, type), shadow, result_tags));
    } else {
       VG_(tool_panic)("Not a bitop");
    }
@@ -630,7 +555,7 @@ static Ec_ShadowExpr shift2shadow(Ec_Env* env, IRExpr* expr)
 
    /* merge the shifted shadow with the new bytes */
    IRExpr* shifted_shadow = assignNew(env,
-      IRExpr_Binop(op_for_type(Iop_Or8, type),
+      IRExpr_Binop(EC_(op_for_type)(Iop_Or8, type),
          new_bytes,
          assignNew(env, IRExpr_Binop(expr->Iex.Binop.op,
             value_shadow.ebits,
@@ -941,6 +866,7 @@ static void shadow_dirty(Ec_Env* env, IRDirty* dirty)
 
 static VG_REGPARM(2) void helper_set_default_shadow_mem(Addr base, SizeT size)
 {
+   /* TODO: optimalize this */
    if (EC_(opt_track_origins)) {
       ThreadId tid = VG_(get_running_tid)();
       ExeContext* here = VG_(record_ExeContext)(tid, 0);
@@ -948,8 +874,10 @@ static VG_REGPARM(2) void helper_set_default_shadow_mem(Addr base, SizeT size)
       Ec_Otag otag = VG_(get_ECU_from_ExeContext)(here);
       tl_assert(VG_(is_plausible_ECU)(otag));
 
-      for(size_t i = 0; i<size; i++)
-         EC_(set_shadow_otag)(base + i, EC_NATIVE, otag);
+      for(size_t i = 0; i<size; i++) {
+         EC_(set_shadow)(base + i, EC_NATIVE);
+         EC_(set_shadow_otag)(base + i, otag);
+      }
    } else {
       for(size_t i = 0; i<size; i++)
          EC_(set_shadow)(base + i, EC_NATIVE);
@@ -1168,10 +1096,9 @@ static int ecrq_assert_endian(ThreadId tid, UWord* arg)
 {
    Addr start = arg[1];
    SizeT size = arg[2];
-   Ec_Shadow endianity = arg[3];
-   const char* msg = (const char*) arg[4];
+   const char* msg = (const char*) arg[3];
 
-   return EC_(check_memory_endianity)(tid, start, size, endianity, msg);
+   return EC_(check_memory_endianity)(tid, start, size, msg);
 }
 
 static void ec_new_mem_stack(Addr a, SizeT len)
@@ -1179,6 +1106,16 @@ static void ec_new_mem_stack(Addr a, SizeT len)
    for(SizeT i = 0; i<len; i++) {
       EC_(set_shadow)(a + i, EC_UNKNOWN);
    }
+}
+
+static int ecrq_protect_region(UWord* arg, Bool protected)
+{
+   if (!EC_(opt_protection))
+      return 0;
+   Addr addr = arg[1];
+   Addr size = arg[2];
+   EC_(set_protected)(addr, size, protected);
+   return 0;
 }
 
 static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
@@ -1195,7 +1132,13 @@ static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
             *ret = 1;
          break;
          case EC_USERREQ__CHECK_ENDIANITY:
-	    *ret = ecrq_assert_endian(tid, arg);
+            *ret = ecrq_assert_endian(tid, arg);
+         break;
+         case EC_USERREQ__PROTECT_REGION:
+            *ret = ecrq_protect_region(arg, True);
+         break;
+         case EC_USERREQ__UNPROTECT_REGION:
+            *ret = ecrq_protect_region(arg, False);
          break;
          default:
             VG_(message)(Vg_UserMsg, "Warning: unknown endicheck client request code %llx\n",(ULong)arg[0]);
@@ -1208,12 +1151,14 @@ static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
 
 Bool EC_(opt_guess_const_size) = True;
 Bool EC_(opt_track_origins) = False;
+Bool EC_(opt_protection) = True;
 
 static Bool ec_process_cmd_line_options(const char* arg)
 {
    if VG_BOOL_CLO(arg, "--alow-unknown", EC_(opt_allow_unknown)) {}
    else if VG_BOOL_CLO(arg, "--guess-const-size", EC_(opt_guess_const_size)) {}
    else if VG_BOOL_CLO(arg, "--track-origins", EC_(opt_track_origins)) {}
+   else if VG_BOOL_CLO(arg, "--protection", EC_(opt_protection)) {}
    else return False;
    return True;
 }
@@ -1223,6 +1168,7 @@ static void ec_print_usage(void) {
 "    --allow-unknown=yes|no      report unknown endianess as error?\n"
 "    --guest-const-size=yes|no   guess constant size from its contents\n"
 "    --track-origins=yes|no      track origins for data\n"
+"    --protection=yes|no         allow certain memory regions to check for endianity on stores\n"
    );
 }
 
