@@ -32,13 +32,14 @@
 #define __EC_ERRORS_H
 
 #include "ec_include.h"
+#include "ec_shadow.h"
 
 extern Bool EC_(opt_check_syscalls);
 extern Bool EC_(opt_allow_unknown);
 
 Bool EC_(check_memory_endianity)(
       ThreadId tid, Addr base, SizeT size, const char* source_msg);
-void EC_(check_store)(Addr addr, SizeT size, Ec_Shadow* stored);
+void EC_(check_store)(Addr addr, SizeT size, Ec_Shadow* stored, Ec_Otag origin);
 
 Bool EC_(eq_Error)(VgRes res, const Error* e1, const Error* e2 );
 void EC_(before_pp_Error)(const Error* err);

@@ -13,11 +13,16 @@ static uint32_t htobe32(uint32_t param) {
     return param;
 }
 
+/* Try to avoid compiler optimization */
+static __attribute__ ((noinline)) uint32_t source() {
+   return 0xDEADBEEF;
+}
+
 int main() {
    struct ex ex;
    EC_PROTECT_REGION(&ex, sizeof(ex));
-   ex.native_wrong = 0xDEADBEEF;
-   ex.native_target = htobe32(0xDEADBEEF);
+   ex.native_wrong = source();
+   ex.native_target = htobe32(source());
    EC_UNPROTECT_REGION(&ex, sizeof(ex));
 
    return 0;

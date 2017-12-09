@@ -211,7 +211,7 @@ static Bool fits_map(Addr addr, SizeT size)
 }
 
 /* A slow byte-by byte version that supports crossing map boundaries */
-static void helper_store_slow(Addr addr, SizeT size, Ec_Shadow* value)
+static void helper_store_slow(Addr addr, SizeT size, Ec_Shadow* value, Ec_Otag otag)
 {
    tl_assert(size < EC_MAX_STORE);
    Bool protected = False;
@@ -223,7 +223,7 @@ static void helper_store_slow(Addr addr, SizeT size, Ec_Shadow* value)
    }
 
    if (EC_(opt_protection) && protected)
-      EC_(check_store)(addr, size, value);
+      EC_(check_store)(addr, size, value, otag);
 }
 
 static VG_REGPARM(1) uint8_t* helper_get_shadow_ptr(Addr addr)
@@ -259,11 +259,12 @@ void EC_(gen_shadow_store)(IRSB* out, IREndness endness, IRExpr* addr, Ec_Shadow
 }
 
 typedef VG_REGPARM(2) void (*store_helper_fn)(Addr addr, SizeT ebits);
+typedef VG_REGPARM(3) void (*store_helper_protected_fn)(Addr addr, SizeT ebits, Ec_Otag otag);
 typedef struct {
    const char* store_fn_name;
    store_helper_fn store_fn;
    const char* store_protected_fn_name;
-   store_helper_fn store_protected_fn;
+   store_helper_protected_fn store_protected_fn;
 } helper_descriptor;
 
 static VG_REGPARM(2) void helper_store_ebit_8(Addr addr, SizeT ebits)
@@ -272,13 +273,13 @@ static VG_REGPARM(2) void helper_store_ebit_8(Addr addr, SizeT ebits)
    *s = ebits;
 }
 
-static VG_REGPARM(2) void helper_store_ebit_8_protected(Addr addr, SizeT ebits)
+static VG_REGPARM(3) void helper_store_ebit_8_protected(Addr addr, SizeT ebits, Ec_Otag otag)
 {
    Ec_Shadow* s = get_ebit_ptr(addr);
    if (*s & EC_(mk_byte_vector)(1, EC_PROTECTED_TAG)) {
       /* do the costly processing if any part of dst is marked protected */
       UChar narrowed_ebits = ebits;
-      EC_(check_store)(addr, 1, &narrowed_ebits);
+      EC_(check_store)(addr, 1, &narrowed_ebits, otag);
    }
    *s &= EC_PROTECTED_TAG;
    *s |= ebits;
@@ -296,21 +297,21 @@ static VG_REGPARM(2) void helper_store_ebit_16(Addr addr, SizeT ebits)
       UShort* s = (UShort*) get_ebit_ptr(addr);
       *s = ebits;
    } else {
-      helper_store_slow(addr, 2, (Ec_Shadow*)&narrowed_ebits);
+      helper_store_slow(addr, 2, (Ec_Shadow*)&narrowed_ebits, EC_NO_OTAG);
    }
 }
 
-static VG_REGPARM(2) void helper_store_ebit_16_protected(Addr addr, SizeT ebits)
+static VG_REGPARM(3) void helper_store_ebit_16_protected(Addr addr, SizeT ebits, Ec_Otag otag)
 {
    UShort narrowed_ebits = ebits;
    if (fits_map(addr, 2)) {
       UShort* s = (UShort*) get_ebit_ptr(addr);
       *s &= EC_(mk_byte_vector)(2, EC_PROTECTED_TAG);
       if (*s)
-         EC_(check_store)(addr, 2, (Ec_Shadow*)&narrowed_ebits);
+         EC_(check_store)(addr, 2, (Ec_Shadow*)&narrowed_ebits, otag);
       *s |= ebits;
    } else {
-      helper_store_slow(addr, 2, (Ec_Shadow*)&narrowed_ebits);
+      helper_store_slow(addr, 2, (Ec_Shadow*)&narrowed_ebits, otag);
    }
 }
 
@@ -326,21 +327,21 @@ static VG_REGPARM(2) void helper_store_ebit_32(Addr addr, SizeT ebits)
       UWord* s = (UWord*) get_ebit_ptr(addr);
       *s = ebits;
    } else {
-      helper_store_slow(addr, 4, (Ec_Shadow*)&narrowed_ebits);
+      helper_store_slow(addr, 4, (Ec_Shadow*)&narrowed_ebits, EC_NO_OTAG);
    }
 }
 
-static VG_REGPARM(2) void helper_store_ebit_32_protected(Addr addr, SizeT ebits)
+static VG_REGPARM(3) void helper_store_ebit_32_protected(Addr addr, SizeT ebits, Ec_Otag otag)
 {
    UWord narrowed_ebits = ebits;
    if (fits_map(addr, 4)) {
       UWord* s = (UWord*) get_ebit_ptr(addr);
       *s &= EC_(mk_byte_vector)(4, EC_PROTECTED_TAG);
       if (*s)
-         EC_(check_store)(addr, 4, (Ec_Shadow*)&narrowed_ebits);
+         EC_(check_store)(addr, 4, (Ec_Shadow*)&narrowed_ebits, otag);
       *s |= ebits;
    } else {
-      helper_store_slow(addr, 4, (Ec_Shadow*)&narrowed_ebits);
+      helper_store_slow(addr, 4, (Ec_Shadow*)&narrowed_ebits, otag);
    }
 }
 
@@ -356,21 +357,21 @@ static VG_REGPARM(2) void helper_store_ebit_64(Addr addr, SizeT ebits)
       ULong* s = (ULong*) get_ebit_ptr(addr);
       *s = ebits;
    } else {
-      helper_store_slow(addr, 8, (Ec_Shadow*)&narrowed_ebits);
+      helper_store_slow(addr, 8, (Ec_Shadow*)&narrowed_ebits, EC_NO_OTAG);
    }
 }
 
-static VG_REGPARM(2) void helper_store_ebit_64_protected(Addr addr, SizeT ebits)
+static VG_REGPARM(3) void helper_store_ebit_64_protected(Addr addr, SizeT ebits, Ec_Otag otag)
 {
    ULong narrowed_ebits = ebits;
    if (fits_map(addr, 8)) {
       ULong* s = (ULong*) get_ebit_ptr(addr);
       *s &= EC_(mk_byte_vector)(8, EC_PROTECTED_TAG);
       if (*s)
-         EC_(check_store)(addr, 8, (Ec_Shadow*)&narrowed_ebits);
+         EC_(check_store)(addr, 8, (Ec_Shadow*)&narrowed_ebits, otag);
       *s |= ebits;
    } else {
-      helper_store_slow(addr, 8, (Ec_Shadow*)&narrowed_ebits);
+      helper_store_slow(addr, 8, (Ec_Shadow*)&narrowed_ebits, otag);
    }
 }
 
@@ -381,7 +382,7 @@ static const helper_descriptor helper_desc_64 = {
 
 static void gen_ebit_store_part(
       IRSB* out, IRExpr* addr, IRExpr* value, SizeT value_size, SizeT offset,
-      IREndness e, IRExpr* guard, const helper_descriptor* d)
+      IREndness e, IRExpr* guard, const helper_descriptor* d, IRExpr* otag)
 {
    SizeT part_size = sizeofIRType(typeOfIRExpr(out->tyenv, value));
    if (e == Iend_LE)
@@ -404,9 +405,12 @@ static void gen_ebit_store_part(
 
    IRStmt* store_stmt = NULL;
    if (EC_(opt_protection)) {
+      if (!EC_(opt_track_origins)) {
+         otag = EC_(const_sizet)(EC_NO_OTAG);
+      }
       store_stmt = IRStmt_Dirty(unsafeIRDirty_0_N(
-               2, d->store_protected_fn_name, VG_(fnptr_to_fnentry)(d->store_protected_fn),
-               mkIRExprVec_2(addr, value)));
+               3, d->store_protected_fn_name, VG_(fnptr_to_fnentry)(d->store_protected_fn),
+               mkIRExprVec_3(addr, value, otag)));
    } else {
       store_stmt = IRStmt_Dirty(unsafeIRDirty_0_N(
                2, d->store_fn_name, VG_(fnptr_to_fnentry)(d->store_fn),
@@ -429,49 +433,8 @@ void EC_(gen_shadow_store_guarded)(
    tl_assert(endness == Iend_LE);
 #endif
 
-   IRType shadow_type = typeOfIRExpr(out->tyenv, shadow.ebits);
-   switch (shadow_type) {
-      case Ity_I8:
-         gen_ebit_store_part(out, addr, shadow.ebits, 1, 0, endness, guard, &helper_desc_8);
-      break;
-      case Ity_I16:
-         gen_ebit_store_part(out, addr, shadow.ebits, 2, 0, endness, guard, &helper_desc_16);
-      break;
-      case Ity_I32:
-         gen_ebit_store_part(out, addr, shadow.ebits, 4, 0, endness, guard, &helper_desc_32);
-      break;
-      case Ity_I64:
-         gen_ebit_store_part(out, addr, shadow.ebits, 8, 0, endness, guard, &helper_desc_64);
-      break;
-      case Ity_I128:
-         gen_ebit_store_part(
-            out, addr, IRExpr_Unop(Iop_128to64, shadow.ebits), 16, 0, endness, guard, &helper_desc_64);
-         gen_ebit_store_part(
-            out, addr, IRExpr_Unop(Iop_128HIto64, shadow.ebits), 16, 8, endness, guard, &helper_desc_64);
-      break;
-      case Ity_V128:
-         gen_ebit_store_part(
-             out, addr, IRExpr_Unop(Iop_V128to64, shadow.ebits), 16, 0, endness, guard, &helper_desc_64);
-         gen_ebit_store_part(
-             out, addr, IRExpr_Unop(Iop_V128HIto64, shadow.ebits), 16, 8, endness, guard, &helper_desc_64);
-      break;
-      case Ity_V256:
-         gen_ebit_store_part(
-             out, addr, IRExpr_Unop(Iop_V256to64_0, shadow.ebits), 32, 0, endness, guard, &helper_desc_64);
-         gen_ebit_store_part(
-             out, addr, IRExpr_Unop(Iop_V256to64_1, shadow.ebits), 32, 8, endness, guard, &helper_desc_64);
-         gen_ebit_store_part(
-             out, addr, IRExpr_Unop(Iop_V256to64_2, shadow.ebits), 32, 16, endness, guard, &helper_desc_64);
-         gen_ebit_store_part(
-             out, addr, IRExpr_Unop(Iop_V256to64_3, shadow.ebits), 32, 24, endness, guard, &helper_desc_64);
-      break;
-      default:
-         VG_(tool_panic)("Unsupported ebit shadow type");
-   }
-
-   /* And store the origin (separate helper), if enabled */
+   IRExpr *widened_otag = NULL;
    if (EC_(opt_track_origins)) {
-      IRExpr *widened_otag = NULL;
       if (sizeof (void*) == 4) {
          widened_otag = shadow.origin;
       } else {
@@ -479,7 +442,58 @@ void EC_(gen_shadow_store_guarded)(
          addStmtToIRSB(out, IRStmt_WrTmp(widen_otag_tmp, IRExpr_Unop(Iop_32Uto64, shadow.origin)));
          widened_otag = IRExpr_RdTmp(widen_otag_tmp);
       }
+   }
 
+   IRType shadow_type = typeOfIRExpr(out->tyenv, shadow.ebits);
+   switch (shadow_type) {
+      case Ity_I8:
+         gen_ebit_store_part(out, addr, shadow.ebits, 1, 0, endness, guard, &helper_desc_8, widened_otag);
+      break;
+      case Ity_I16:
+         gen_ebit_store_part(out, addr, shadow.ebits, 2, 0, endness, guard, &helper_desc_16, widened_otag);
+      break;
+      case Ity_I32:
+         gen_ebit_store_part(out, addr, shadow.ebits, 4, 0, endness, guard, &helper_desc_32, widened_otag);
+      break;
+      case Ity_I64:
+         gen_ebit_store_part(out, addr, shadow.ebits, 8, 0, endness, guard, &helper_desc_64, widened_otag);
+      break;
+      case Ity_I128:
+         gen_ebit_store_part(
+            out, addr, IRExpr_Unop(Iop_128to64, shadow.ebits),
+            16, 0, endness, guard, &helper_desc_64, widened_otag);
+         gen_ebit_store_part(
+            out, addr, IRExpr_Unop(Iop_128HIto64, shadow.ebits),
+            16, 8, endness, guard, &helper_desc_64, widened_otag);
+      break;
+      case Ity_V128:
+         gen_ebit_store_part(
+             out, addr, IRExpr_Unop(Iop_V128to64, shadow.ebits),
+             16, 0, endness, guard, &helper_desc_64, widened_otag);
+         gen_ebit_store_part(
+             out, addr, IRExpr_Unop(Iop_V128HIto64, shadow.ebits),
+             16, 8, endness, guard, &helper_desc_64, widened_otag);
+      break;
+      case Ity_V256:
+         gen_ebit_store_part(
+             out, addr, IRExpr_Unop(Iop_V256to64_0, shadow.ebits),
+             32, 0, endness, guard, &helper_desc_64, widened_otag);
+         gen_ebit_store_part(
+             out, addr, IRExpr_Unop(Iop_V256to64_1, shadow.ebits),
+             32, 8, endness, guard, &helper_desc_64, widened_otag);
+         gen_ebit_store_part(
+             out, addr, IRExpr_Unop(Iop_V256to64_2, shadow.ebits),
+             32, 16, endness, guard, &helper_desc_64, widened_otag);
+         gen_ebit_store_part(
+             out, addr, IRExpr_Unop(Iop_V256to64_3, shadow.ebits),
+             32, 24, endness, guard, &helper_desc_64, widened_otag);
+      break;
+      default:
+         VG_(tool_panic)("Unsupported ebit shadow type");
+   }
+
+   /* And store the origin (separate helper), if enabled */
+   if (EC_(opt_track_origins)) {
       tl_assert(shadow.origin);
       SizeT data_size = sizeofIRType(typeOfIRExpr(out->tyenv, shadow.ebits));
       IRDirty *store_origin = unsafeIRDirty_0_N(

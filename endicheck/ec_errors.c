@@ -26,7 +26,7 @@ typedef struct {
       struct {
          Addr addr;
          SizeT store_size;
-         UChar stored_data[EC_MAX_STORE];
+         Ec_Otag origin;
       } store;
    };
    const char* source_msg;
@@ -50,7 +50,7 @@ static Bool is_endianity_ok(Ec_Endianity e)
    return (e == EC_TARGET) || (e == EC_ANY) || (EC_(opt_allow_unknown) && (e == EC_UNKNOWN));
 }
 
-void EC_(check_store)(Addr addr, SizeT size, Ec_Shadow *stored)
+void EC_(check_store)(Addr addr, SizeT size, Ec_Shadow *stored, Ec_Otag otag)
 {
    tl_assert(EC_(opt_protection));
    tl_assert(size <= EC_MAX_STORE);
@@ -66,7 +66,7 @@ void EC_(check_store)(Addr addr, SizeT size, Ec_Shadow *stored)
       Ec_Error error;
       error.store.addr = addr;
       error.store.store_size = size;
-      VG_(memcpy)(error.store.stored_data, stored, size);
+      error.store.origin = otag;
       error.source_msg = NULL;
 
       VG_(maybe_record_error)(VG_(get_running_tid)(), Ec_Err_StoreEndianity, addr, NULL, &error);
@@ -158,6 +158,18 @@ static void print_description(const char* err_id, const char* fmt, ...)
    va_end(vargs);
 }
 
+static void print_origin(ExeContext* origin_ctx)
+{
+   if (EC_(opt_track_origins)) {
+      if (origin_ctx) {
+         VG_(message)(Vg_UserMsg, "The value was probably created at this point:\n");
+         VG_(pp_ExeContext)(origin_ctx);
+      } else {
+         VG_(message)(Vg_UserMsg, "The origin of the value is not known.\n");
+      }
+   }
+}
+
 static void print_block(const char* msg, Ec_Otag origin, Addr base, SizeT start, SizeT size)
 {
    const Bool xml  = VG_(clo_xml);
@@ -191,16 +203,35 @@ static void print_block(const char* msg, Ec_Otag origin, Addr base, SizeT start,
             (void*)base, start, size);
       EC_(dump_mem_noheader)(base + start, size);
 
-      if (EC_(opt_track_origins)) {
-         if (origin_ctx) {
-            VG_(message)(Vg_UserMsg, "The value was probably created at this point:\n");
-            VG_(pp_ExeContext)(origin_ctx);
-         } else {
-            VG_(message)(Vg_UserMsg, "The origin of the value is not known.\n");
-         }
-      }
-
+      print_origin(origin_ctx);
       VG_(message)(Vg_UserMsg, "The endianity check was requested here:\n");
+   }
+}
+
+static void print_store(Addr addr, SizeT size, Ec_Otag origin)
+{
+   const Bool xml  = VG_(clo_xml);
+   ExeContext* origin_ctx = NULL;
+   if (EC_(opt_track_origins)) {
+      if (VG_(is_plausible_ECU)(origin)) {
+         origin_ctx = VG_(get_ExeContext_from_ECU)(origin);
+      }
+   }
+
+   if (xml) {
+      VG_(printf_xml)("  <addr>\n");
+      VG_(printf_xml)("    <base>0x%lx</base>\n", addr);
+      VG_(printf_xml)("    <size>%lu</size>\n", size);
+      VG_(printf_xml)("  </addr>\n");
+      if (origin_ctx) {
+         VG_(printf_xml)("  <value-origin/>n");
+         VG_(pp_ExeContext)(origin_ctx);
+      }
+   } else {
+      VG_(message)(Vg_UserMsg, "Address written to is %p, length %lu:\n",(void*)addr, size);
+      /* TODO: dump the endianity */
+      print_origin(origin_ctx);
+      VG_(message)(Vg_UserMsg, "The write occured here:\n");
    }
 }
 
@@ -217,7 +248,8 @@ void EC_(pp_Error)(const Error* err)
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       break;
    case Ec_Err_StoreEndianity:
-      print_description(err_name, "Storing data of invalid endianity into protected region");
+      print_description(err_name, "Writing data of invalid endianity into protected region");
+      print_store(extra->store.addr, extra->store.store_size, extra->store.origin);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
       break;
    }
