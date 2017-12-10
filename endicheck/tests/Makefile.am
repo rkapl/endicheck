@@ -26,3 +26,7 @@ EXTRA_DIST += origins.vgtest origins.stderr.exp
 
 check_PROGRAMS += protection
 EXTRA_DIST += protection.vgtest protection.stderr.exp
+
+check_PROGRAMS += load_store
+load_store_CFLAGS = -mavx
+EXTRA_DIST += load_store.vgtest load_store.stderr.exp
