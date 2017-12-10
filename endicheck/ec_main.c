@@ -281,6 +281,51 @@ static IRExpr* narrow_to_32(Ec_Env* env, IRExpr* from) {
    return assignNew(env, EC_(change_width)(env->tyenv, from, Ity_I32));
 }
 
+static void helper_check_ebits(ULong ebits)
+{
+    if (ebits & ~EC_(mk_byte_vector)(8, 0x7)) {
+        VG_(message)(Vg_UserMsg, "Invalid ebits 0x%llx\n", ebits);
+        VG_(tool_panic)("helper_check_ebits failure");
+    }
+}
+
+static void check_part(Ec_Env* env, IRExpr* ebits)
+{
+    stmt(env, IRStmt_Dirty(unsafeIRDirty_0_N(
+                0, "ec_check_ebits", VG_(fnptr_to_fnentry)(helper_check_ebits), 
+                mkIRExprVec_1(ebits))));
+}
+
+/* Will place an assertion on the ebits -- it will check if any invalid bits are set */
+static void check_ebits(Ec_Env* env, IRExpr* ebits)
+{
+    IRType type = typeOfIRExpr(env->tyenv, ebits);
+    switch (type) {
+        case Ity_I8:
+        case Ity_I16:
+        case Ity_I32:
+        case Ity_I64:
+            check_part(env, widen_to_64(env, ebits));
+            break;
+        case Ity_I128:
+            check_part(env, assignNew(env, IRExpr_Unop(Iop_128to64, ebits)));
+            check_part(env, assignNew(env, IRExpr_Unop(Iop_128HIto64, ebits)));
+            break;
+        case Ity_V128:
+            check_part(env, assignNew(env, IRExpr_Unop(Iop_V128to64, ebits)));
+            check_part(env, assignNew(env, IRExpr_Unop(Iop_V128HIto64, ebits)));
+            break;
+        case Ity_V256:
+            check_part(env, assignNew(env, IRExpr_Unop(Iop_V256to64_0, ebits)));
+            check_part(env, assignNew(env, IRExpr_Unop(Iop_V256to64_1, ebits)));
+            check_part(env, assignNew(env, IRExpr_Unop(Iop_V256to64_2, ebits)));
+            check_part(env, assignNew(env, IRExpr_Unop(Iop_V256to64_3, ebits)));
+            break;
+        default:
+            VG_(tool_panic)("check_ebits unsupported shadow type");
+    }
+}
+
 static Ec_ShadowExpr default_shadow_for_type(Ec_Env* env, IRType expr_type)
 {
    tl_assert(has_endianity(expr_type));
