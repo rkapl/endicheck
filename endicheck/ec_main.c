@@ -137,7 +137,7 @@ static IRType type2ebit(IRType ty)
    }
 }
 
-static Ec_Otag current_otag_value(void)
+static VG_REGPARM(0) ULong helper_gen_exectx(void)
 {
    ThreadId tid = VG_(get_running_tid)();
    ExeContext* here = VG_(record_ExeContext)(tid, 0);
@@ -145,11 +145,6 @@ static Ec_Otag current_otag_value(void)
    Ec_Otag otag = VG_(get_ECU_from_ExeContext)(here);
    tl_assert(VG_(is_plausible_ECU)(otag));
    return otag;
-}
-
-static VG_REGPARM(0) ULong helper_gen_exectx(void)
-{
-   return current_otag_value();
 }
 
 static IRExpr* current_otag(Ec_Env *env)
@@ -1155,12 +1150,6 @@ static void ec_new_mem_stack(Addr a, SizeT len)
 {
    for(SizeT i = 0; i<len; i++) {
       EC_(set_shadow)(a + i, EC_UNKNOWN);
-   }
-   if (EC_(opt_track_origins)) {
-      Ec_Otag otag = current_otag_value();
-      for(SizeT i = 0; i<len; i++) {
-        EC_(set_shadow_otag)(a + i, otag);
-      }
    }
 }
 
