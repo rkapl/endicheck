@@ -1153,6 +1153,14 @@ static void ec_new_mem_stack(Addr a, SizeT len)
    }
 }
 
+static void ec_new_mem_stack_w_ECU(Addr a, SizeT len, UInt otag)
+{
+   for(SizeT i = 0; i<len; i++) {
+      EC_(set_shadow)(a + i, EC_UNKNOWN);
+      EC_(set_shadow_otag)(a + i, otag);
+   }
+}
+
 static int ecrq_protect_region(UWord* arg, Bool protected)
 {
    if (!EC_(opt_protection))
@@ -1255,7 +1263,11 @@ static void EC_(pre_clo_init)(void)
             EC_(get_extra_suppression_info),
             EC_(print_extra_suppression_use),
             EC_(update_extra_suppression_use));
-   VG_(track_new_mem_stack)(ec_new_mem_stack);
+   if (EC_(opt_track_origins))
+      VG_(track_new_mem_stack_w_ECU)(ec_new_mem_stack_w_ECU);
+   else
+      VG_(track_new_mem_stack)(ec_new_mem_stack);
+      
    VG_(needs_command_line_options)(
             ec_process_cmd_line_options,
             ec_print_usage,
