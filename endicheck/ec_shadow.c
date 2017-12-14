@@ -262,21 +262,25 @@ typedef struct {
    store_helper_protected_fn store_protected_fn;
 } helper_descriptor;
 
-static void check_value_ebits(SizeT ebits)
+static void check_stored_ebits(SizeT ebits)
 {
-   tl_assert((EC_(mk_byte_vector)(8, EC_PROTECTED_TAG | ~EC_VALID_EBITS) & ebits) == 0);
+   if ((EC_(mk_byte_vector)(8, EC_PROTECTED_TAG | ~EC_VALID_EBITS) & ebits) != 0) {
+   VG_(message)(Vg_UserMsg, "Invalid ebits 0x%lx\n", ebits);
+      VG_(tool_panic)("Invalid ebits");
+   }
 }
+
 
 static VG_REGPARM(2) void helper_store_ebit_8(Addr addr, SizeT ebits)
 {
-   check_value_ebits(ebits);
+   check_stored_ebits(ebits);
    Ec_Shadow* s = get_ebit_ptr(addr);
    *s = ebits;
 }
 
 static VG_REGPARM(3) void helper_store_ebit_8_protected(Addr addr, SizeT ebits, Ec_Otag otag)
 {
-   check_value_ebits(ebits);
+   check_stored_ebits(ebits);
    Ec_Shadow* s = get_ebit_ptr(addr);
    if (*s & EC_(mk_byte_vector)(1, EC_PROTECTED_TAG)) {
       /* do the costly processing if any part of dst is marked protected */
@@ -294,7 +298,7 @@ static const helper_descriptor helper_desc_8 = {
 
 static VG_REGPARM(2) void helper_store_ebit_16(Addr addr, SizeT ebits)
 {
-   check_value_ebits(ebits);
+   check_stored_ebits(ebits);
    UShort narrowed_ebits = ebits;
    if (fits_map(addr, 2)) {
       UShort* s = (UShort*) get_ebit_ptr(addr);
@@ -307,7 +311,7 @@ static VG_REGPARM(2) void helper_store_ebit_16(Addr addr, SizeT ebits)
 static VG_REGPARM(3) void helper_store_ebit_16_protected(Addr addr, SizeT ebits, Ec_Otag otag)
 {
    UShort narrowed_ebits = ebits;
-   check_value_ebits(ebits);
+   check_stored_ebits(ebits);
    if (fits_map(addr, 2)) {
       UShort* s = (UShort*) get_ebit_ptr(addr);
       *s &= EC_(mk_byte_vector)(2, EC_PROTECTED_TAG);
@@ -327,7 +331,7 @@ static const helper_descriptor helper_desc_16 = {
 static VG_REGPARM(2) void helper_store_ebit_32(Addr addr, SizeT ebits)
 {
    UWord narrowed_ebits = ebits;
-   check_value_ebits(ebits);
+   check_stored_ebits(ebits);
    if (fits_map(addr, 4)) {
       UWord* s = (UWord*) get_ebit_ptr(addr);
       *s = ebits;
@@ -339,7 +343,7 @@ static VG_REGPARM(2) void helper_store_ebit_32(Addr addr, SizeT ebits)
 static VG_REGPARM(3) void helper_store_ebit_32_protected(Addr addr, SizeT ebits, Ec_Otag otag)
 {
    UWord narrowed_ebits = ebits;
-   check_value_ebits(ebits);
+   check_stored_ebits(ebits);
    if (fits_map(addr, 4)) {
       UWord* s = (UWord*) get_ebit_ptr(addr);
       *s &= EC_(mk_byte_vector)(4, EC_PROTECTED_TAG);
@@ -359,7 +363,7 @@ static const helper_descriptor helper_desc_32 = {
 static VG_REGPARM(2) void helper_store_ebit_64(Addr addr, SizeT ebits)
 {
    ULong narrowed_ebits = ebits;
-   check_value_ebits(ebits);
+   check_stored_ebits(ebits);
    if (fits_map(addr, 8)) {
       ULong* s = (ULong*) get_ebit_ptr(addr);
       *s = ebits;
@@ -371,7 +375,7 @@ static VG_REGPARM(2) void helper_store_ebit_64(Addr addr, SizeT ebits)
 static VG_REGPARM(3) void helper_store_ebit_64_protected(Addr addr, SizeT ebits, Ec_Otag otag)
 {
    ULong narrowed_ebits = ebits;
-   check_value_ebits(ebits);
+   check_stored_ebits(ebits);
    if (fits_map(addr, 8)) {
       ULong* s = (ULong*) get_ebit_ptr(addr);
       *s &= EC_(mk_byte_vector)(8, EC_PROTECTED_TAG);
