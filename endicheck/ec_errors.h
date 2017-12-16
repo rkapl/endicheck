@@ -36,6 +36,7 @@
 
 extern Bool EC_(opt_check_syscalls);
 extern Bool EC_(opt_allow_unknown);
+extern Bool EC_(opt_report_different_origins);
 
 Bool EC_(check_memory_endianity)(
       ThreadId tid, Addr base, SizeT size, const char* source_msg);

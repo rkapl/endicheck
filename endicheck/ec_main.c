@@ -1302,6 +1302,7 @@ static Bool ec_process_cmd_line_options(const char* arg)
    else if VG_BOOL_CLO(arg, "--guess-const-size", EC_(opt_guess_const_size)) {}
    else if VG_BOOL_CLO(arg, "--track-origins", EC_(opt_track_origins)) {}
    else if VG_BOOL_CLO(arg, "--protection", EC_(opt_protection)) {}
+   else if VG_BOOL_CLO(arg, "--report-different-origins", EC_(opt_report_different_origins)) {}
    else return False;
    return True;
 }
@@ -1312,6 +1313,7 @@ static void ec_print_usage(void) {
 "    --guest-const-size=yes|no   guess constant size from its contents\n"
 "    --track-origins=yes|no      track origins for data\n"
 "    --protection=yes|no         allow certain memory regions to check for endianity on stores\n"
+"    --report-different-origins=yes|no report endianity errors as separate if origins are different\n"
    );
 }
 
