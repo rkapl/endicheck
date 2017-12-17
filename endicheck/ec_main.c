@@ -376,6 +376,16 @@ static Ec_ShadowExpr same_for_shadow(Ec_Env* env, IRExpr* expr)
          r.origin = current_otag(env);
       }
    break;
+   case Iex_Qop:
+      r.ebits = IRExpr_Qop(expr->Iex.Qop.details->op,
+            expr2shadow(env, expr->Iex.Qop.details->arg1).ebits,
+            expr2shadow(env, expr->Iex.Qop.details->arg2).ebits,
+            expr2shadow(env, expr->Iex.Qop.details->arg3).ebits,
+            expr2shadow(env, expr->Iex.Qop.details->arg4).ebits);
+      if (EC_(opt_track_origins)) {
+         r.origin = current_otag(env);
+      }
+   break;
    default:
       VG_(tool_panic)("expr is not an op");
    }
@@ -409,6 +419,7 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
 {
 
    Ec_ShadowExpr r, inner;
+   IRExpr* tmp_const = NULL;
 
    switch (expr->Iex.Unop.op) {
       // for widening, mark the new bytes as NATIVE_EMPTY
@@ -454,6 +465,22 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
             inner.ebits);
          return r;
 
+      case Iop_32UtoV128:
+         r = expr2shadow(env, expr->Iex.Unop.arg);
+         tmp_const = IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, EC_NATIVE)));
+         r.ebits = IRExpr_Binop(Iop_64HLtoV128,
+            assignNew(env, IRExpr_Binop(Iop_32HLto64, tmp_const, tmp_const)),
+            assignNew(env, IRExpr_Binop(Iop_32HLto64, tmp_const, r.ebits))
+         );
+         return r;
+      case Iop_64UtoV128:
+         r = expr2shadow(env, expr->Iex.Unop.arg);
+         r.ebits = IRExpr_Binop(Iop_64HLtoV128,
+            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE))),
+            r.ebits
+         );
+         return r;
+
       /* narrowing is just a byte shuffle */
       case Iop_64to16:
       case Iop_64to32:
@@ -466,6 +493,13 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
       case Iop_16HIto8:
       case Iop_V128to64:
       case Iop_V128HIto64:
+      case Iop_V128to32:
+      case Iop_V256to64_0:
+      case Iop_V256to64_1:
+      case Iop_V256to64_2:
+      case Iop_V256to64_3:
+      case Iop_V256toV128_0:
+      case Iop_V256toV128_1:
          return same_for_shadow(env, expr);
 
       case Iop_Dup8x8:
@@ -720,6 +754,13 @@ static Ec_ShadowExpr binop2shadow(Ec_Env* env, IRExpr* expr)
       case Iop_CatEvenLanes8x16:
       case Iop_CatEvenLanes16x8:
       case Iop_CatEvenLanes32x4:
+      /* Concatenations */
+      case Iop_8HLto16:
+      case Iop_16HLto32:
+      case Iop_32HLto64:
+      case Iop_64HLto128:
+      case Iop_64HLtoV128:
+      case Iop_V128HLtoV256:
          return same_for_shadow(env, expr);
 
       /* arithmetic shift is not endian agnostic */
@@ -751,6 +792,8 @@ static Ec_ShadowExpr qop2shadow(Ec_Env* env, IRExpr* expr)
 {
    IRQop* op = expr->Iex.Qop.details;
    switch (op->op) {
+   case Iop_64x4toV256:
+      return same_for_shadow(env, expr);
    default:
       return default_shadow(env, expr);
    }

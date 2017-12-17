@@ -30,3 +30,6 @@ EXTRA_DIST += protection.vgtest protection.stderr.exp
 check_PROGRAMS += load_store
 load_store_CFLAGS = -mavx
 EXTRA_DIST += load_store.vgtest load_store.stderr.exp
+
+check_PROGRAMS += calloc_is_any
+EXTRA_DIST += calloc_is_any.vgtest calloc_is_any.stderr.exp
