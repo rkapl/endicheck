@@ -393,6 +393,18 @@ static void unop2shadow_inner_helper(
    result->ebits = NULL;
 }
 
+static Ec_ShadowExpr vector_get2shadow(Ec_Env* env, IRExpr* expr)
+{
+   /* first argument is the vector, second index */
+   tl_assert(expr->tag == Iex_Binop);
+   Ec_ShadowExpr vector_shadow = expr2shadow(env, expr->Iex.Binop.arg1);
+
+   Ec_ShadowExpr r;
+   r.ebits = IRExpr_Binop(expr->Iex.Binop.op, vector_shadow.ebits, expr->Iex.Binop.arg2);
+   r.origin = vector_shadow.origin;
+   return r;
+}
+
 static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
 {
 
@@ -452,9 +464,43 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
       case Iop_64HIto32:
       case Iop_32HIto16:
       case Iop_16HIto8:
-         unop2shadow_inner_helper(env, &r, &inner, expr);
-         r.ebits = inner.ebits;
-         return r;
+      case Iop_V128to64:
+      case Iop_V128HIto64:
+         return same_for_shadow(env, expr);
+
+      case Iop_Dup8x8:
+      case Iop_Dup16x4:
+      case Iop_Dup32x2:
+      case Iop_Dup8x16:
+      case Iop_Dup16x8:
+      case Iop_Dup32x4:
+      case Iop_ZeroHI64ofV128:
+      case Iop_ZeroHI96ofV128:
+      case Iop_ZeroHI112ofV128:
+      case Iop_ZeroHI120ofV128:
+      case Iop_Reverse8sIn16_x4:
+      case Iop_Reverse8sIn32_x2:
+      case Iop_Reverse16sIn32_x2:
+      case Iop_Reverse8sIn64_x1:
+      case Iop_Reverse16sIn64_x1:
+      case Iop_Reverse32sIn64_x1:
+      case Iop_Reverse8sIn16_x8:
+      case Iop_Reverse8sIn32_x4:
+      case Iop_Reverse16sIn32_x4:
+      case Iop_Reverse8sIn64_x2:
+      case Iop_Reverse16sIn64_x2:
+      case Iop_Reverse32sIn64_x2:
+      case Iop_Reverse1sIn8_x16:
+         return same_for_shadow(env, expr);
+
+      case Iop_GetElem8x8:
+      case Iop_GetElem16x4:
+      case Iop_GetElem32x2:
+      case Iop_GetElem8x16:
+      case Iop_GetElem16x8:
+      case Iop_GetElem32x4:
+      case Iop_GetElem64x2:
+         return vector_get2shadow(env, expr);
 
       /* There are no shadow information for bits, we must create a new one */
       case Iop_1Uto8:
@@ -631,6 +677,50 @@ static Ec_ShadowExpr binop2shadow(Ec_Env* env, IRExpr* expr)
       case Iop_Xor32:
       case Iop_Xor64:
          return bitop2shadow(env, expr);
+
+      /* 64 bit SIMD */
+      case Iop_InterleaveHI8x8:
+      case Iop_InterleaveHI16x4:
+      case Iop_InterleaveHI32x2:
+      case Iop_InterleaveLO8x8:
+      case Iop_InterleaveLO16x4:
+      case Iop_InterleaveLO32x2:
+      case Iop_InterleaveOddLanes8x8:
+      case Iop_InterleaveEvenLanes8x8:
+      case Iop_InterleaveOddLanes16x4:
+      case Iop_InterleaveEvenLanes16x4:
+      case Iop_CatOddLanes8x8:
+      case Iop_CatOddLanes16x4:
+      case Iop_CatEvenLanes8x8:
+      case Iop_CatEvenLanes16x4:
+      /* 128-bit SIMD */
+      case Iop_InterleaveHI8x16:
+      case Iop_InterleaveHI16x8:
+      case Iop_InterleaveHI32x4:
+      case Iop_InterleaveHI64x2:
+      case Iop_InterleaveLO8x16:
+      case Iop_InterleaveLO16x8:
+      case Iop_InterleaveLO32x4:
+      case Iop_InterleaveLO64x2:
+      case Iop_InterleaveOddLanes8x16:
+      case Iop_InterleaveEvenLanes8x16:
+      case Iop_InterleaveOddLanes16x8:
+      case Iop_InterleaveEvenLanes16x8:
+      case Iop_InterleaveOddLanes32x4:
+      case Iop_InterleaveEvenLanes32x4:
+      case Iop_PackOddLanes8x16:
+      case Iop_PackEvenLanes8x16:
+      case Iop_PackOddLanes16x8:
+      case Iop_PackEvenLanes16x8:
+      case Iop_PackOddLanes32x4:
+      case Iop_PackEvenLanes32x4:
+      case Iop_CatOddLanes8x16:
+      case Iop_CatOddLanes16x8:
+      case Iop_CatOddLanes32x4:
+      case Iop_CatEvenLanes8x16:
+      case Iop_CatEvenLanes16x8:
+      case Iop_CatEvenLanes32x4:
+         return same_for_shadow(env, expr);
 
       /* arithmetic shift is not endian agnostic */
       case Iop_Shl8:
