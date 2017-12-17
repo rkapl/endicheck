@@ -982,7 +982,7 @@ static void shadow_load_guarded(Ec_Env *env, IRLoadG* load_op)
    }
    stmt(env, IRStmt_WrTmp(temp2ebits(env, load_op->dst), loaded.ebits));
    if (EC_(opt_track_origins))
-      stmt(env, IRStmt_WrTmp(temp2otag(env, load_op->dst), loaded.ebits));
+      stmt(env, IRStmt_WrTmp(temp2otag(env, load_op->dst), loaded.origin));
 }
 
 static void shadow_dirty(Ec_Env* env, IRDirty* dirty)

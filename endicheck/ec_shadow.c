@@ -590,6 +590,8 @@ static IRExpr* gen_shadow_load_part(
 
    IRTemp result_tmp = newIRTemp(out->tyenv, EC_NATIVE_IRTYPE);
    IRDirty* dirty = unsafeIRDirty_1_N(result_tmp, 1, helper_name, helper, mkIRExprVec_1(addr));
+   if (guard)
+      dirty->guard = guard;
    addStmtToIRSB(out, IRStmt_Dirty(dirty));
 
    if (part_size < sizeof(SizeT)) {
@@ -680,26 +682,34 @@ Ec_ShadowExpr EC_(gen_shadow_load_guarded)(
       VG_(tool_panic)("shadow_load_guarded unsupported ebit type");
    }
 
+   if (guard) {
+      IRTemp value_tmp = newIRTemp(out->tyenv, type);
+      addStmtToIRSB(out, IRStmt_WrTmp(value_tmp, r.ebits));
+      r.ebits = IRExpr_ITE(guard, IRExpr_RdTmp(value_tmp), alt.ebits);
+   }
+
    if (EC_(opt_track_origins)) {
       /* Load the otag. Because of dirt call limitations, we get native size otag back */
       IRTemp origin_tmp = newIRTemp(out->tyenv, word_type());
       IRDirty* load_origin = unsafeIRDirty_1_N(
                origin_tmp, 1, "ec_get_otag", VG_(fnptr_to_fnentry)(helper_get_otag),
                mkIRExprVec_1(addr));
+      if (guard)
+         load_origin->guard = guard;
       addStmtToIRSB(out, IRStmt_Dirty(load_origin));
+
       IRExpr *narrowed_origin = NULL;
       /* Narrow it if needed */
       if (sizeof(void*) == 4) {
          narrowed_origin = IRExpr_RdTmp(origin_tmp);
       } else {
-         IRTemp widened_origin_tmp = newIRTemp(out->tyenv, Ity_I32);
-         addStmtToIRSB(out, IRStmt_WrTmp(widened_origin_tmp, IRExpr_Unop(Iop_64to32, IRExpr_RdTmp(origin_tmp))));
-         narrowed_origin = IRExpr_RdTmp(widened_origin_tmp);
+         IRTemp narrowed_origin_tmp = newIRTemp(out->tyenv, Ity_I32);
+         addStmtToIRSB(out, IRStmt_WrTmp(narrowed_origin_tmp, IRExpr_Unop(Iop_64to32, IRExpr_RdTmp(origin_tmp))));
+         narrowed_origin = IRExpr_RdTmp(narrowed_origin_tmp);
       }
 
       /* And provide correct guarded behaviour using ternary operator, if needed */
       if (guard) {
-         load_origin->guard = guard;
          IRTemp alt_origin_tmp = newIRTemp(out->tyenv, Ity_I32);
          addStmtToIRSB(out, IRStmt_WrTmp(alt_origin_tmp, IRExpr_ITE(guard, narrowed_origin, alt.origin)));
          r.origin = IRExpr_RdTmp(alt_origin_tmp);
