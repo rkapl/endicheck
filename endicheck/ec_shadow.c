@@ -520,7 +520,7 @@ void EC_(gen_shadow_store_guarded)(
 static void helper_load_slow(void* dst, Addr addr, SizeT size)
 {
    UChar* dst_char = dst;
-   for(SizeT i = 0; i<size; i++, dst_char++) {
+   for(SizeT i = 0; i<size; i++) {
       dst_char[i] = EC_(get_shadow(addr + i));
    }
 }
