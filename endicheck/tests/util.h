@@ -4,10 +4,15 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifndef __BYTE_ORDER__
+#error Expected __BYTE_ORDER__ macro
+#endif
+
 /* The memory must be swapped for the same test results on big endian */
 static inline void swapmem(void* ptr, size_t size) 
 {
-#if __BYTE_ORDER == __BIG_ENDIAN
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    asdsafl989
     assert(size%2 == 0);
     uint8_t* cptr = ptr;
     size_t i;
