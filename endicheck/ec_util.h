@@ -33,10 +33,26 @@
 
 #include "ec_include.h"
 
+#if VG_WORDSIZE == 4
+#define EC_NATIVE_IRTYPE Ity_I32
+#else
+#define EC_NATIVE_IRTYPE Ity_I64
+#endif
+
+/* LARGEINT is te largest integer supported by the platform */
+#if VGA_ppc32
+#define EC_LARGEINT Ity_I32
+typedef uint32_t Ec_LargeInt;
+#else
+typedef uint64_t Ec_LargeInt;
+#define EC_LARGEINT Ity_I64
+#define EC_64INT
+#endif
+
 static inline ULong EC_(mk_byte_vector)(int length, UChar value)
 {
-   tl_assert(length > 0 && length <= 8);
-   ULong acc = 0;
+   tl_assert(length > 0 && length <= sizeof(ULong));
+   Ec_LargeInt acc = 0;
    for (int i = 0; i<length; i++) {
       acc <<= 8;
       acc |= value;
@@ -127,11 +143,5 @@ static inline IRExpr* EC_(change_width)(IRTypeEnv* env, IRExpr* value, IRType to
       VG_(tool_panic)("change_width unsupported combination");
    }
 }
-
-#if VG_WORDSIZE == 4
-#define EC_NATIVE_IRTYPE Ity_I32
-#else
-#define EC_NATIVE_IRTYPE Ity_I64
-#endif
 
 #endif

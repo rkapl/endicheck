@@ -35,7 +35,8 @@ static void copy_v256(ex* dst, ex* src)
 
 int main() {
    ex src;
-   for(int i = 0; i<8; i++)
+   int i;
+   for(i = 0; i<8; i++)
       src.d32[i] = 0xDEADBEEF;
    EC_MARK_ENDIANITY(&src.d32[0], sizeof(src.d32[0]), EC_TARGET);
 

@@ -28,7 +28,9 @@ check_PROGRAMS += protection
 EXTRA_DIST += protection.vgtest protection.stderr.exp
 
 check_PROGRAMS += load_store
+if VGCONF_ARCHS_INCLUDE_AMD64
 load_store_CFLAGS = -mavx
+endif
 EXTRA_DIST += load_store.vgtest load_store.stderr.exp
 
 check_PROGRAMS += calloc_is_any

@@ -262,10 +262,10 @@ typedef struct {
    store_helper_protected_fn store_protected_fn;
 } helper_descriptor;
 
-static void check_stored_ebits(SizeT ebits)
+static void check_stored_ebits(Ec_LargeInt ebits)
 {
-   if ((EC_(mk_byte_vector)(8, EC_PROTECTED_TAG | ~EC_VALID_EBITS) & ebits) != 0) {
-   VG_(message)(Vg_UserMsg, "Invalid ebits 0x%lx\n", ebits);
+   if ((EC_(mk_byte_vector)(sizeof(Ec_LargeInt), EC_PROTECTED_TAG | ~EC_VALID_EBITS) & ebits) != 0) {
+   VG_(message)(Vg_UserMsg, "Invalid ebits 0x%llx\n", (uint64_t) ebits);
       VG_(tool_panic)("Invalid ebits");
    }
 }
@@ -360,6 +360,7 @@ static const helper_descriptor helper_desc_32 = {
    "ec_store_ebit_32_protected", helper_store_ebit_32_protected,
 };
 
+#ifdef EC_64INT
 static VG_REGPARM(2) void helper_store_ebit_64(Addr addr, SizeT ebits)
 {
    ULong narrowed_ebits = ebits;
@@ -391,6 +392,7 @@ static const helper_descriptor helper_desc_64 = {
    "ec_store_ebit_64", helper_store_ebit_64,
    "ec_store_ebit_64_protected", helper_store_ebit_64_protected,
 };
+#endif
 
 static void gen_ebit_store_part(
       IRSB* out, IRExpr* addr, IRExpr* value, SizeT value_size, SizeT offset,
@@ -468,14 +470,24 @@ void EC_(gen_shadow_store_guarded)(
          gen_ebit_store_part(out, addr, shadow.ebits, 4, 0, endness, guard, &helper_desc_32, widened_otag);
       break;
       case Ity_I64:
+#ifdef EC_64INT
          gen_ebit_store_part(out, addr, shadow.ebits, 8, 0, endness, guard, &helper_desc_64, widened_otag);
+#else
+         gen_ebit_store_part(
+            out, addr, IRExpr_Unop(Iop_64HIto32, shadow.ebits),
+            8, 0, endness, guard, &helper_desc_32, widened_otag);
+         gen_ebit_store_part(
+            out, addr, IRExpr_Unop(Iop_64to32, shadow.ebits),
+            8, 4, endness, guard, &helper_desc_32, widened_otag);
+#endif
       break;
+#ifdef EC_64INT
       case Ity_I128:
          gen_ebit_store_part(
-            out, addr, IRExpr_Unop(Iop_128to64, shadow.ebits),
+            out, addr, IRExpr_Unop(Iop_128HIto64, shadow.ebits),
             16, 0, endness, guard, &helper_desc_64, widened_otag);
          gen_ebit_store_part(
-            out, addr, IRExpr_Unop(Iop_128HIto64, shadow.ebits),
+            out, addr, IRExpr_Unop(Iop_128to64, shadow.ebits),
             16, 8, endness, guard, &helper_desc_64, widened_otag);
       break;
       case Ity_V128:
@@ -500,6 +512,7 @@ void EC_(gen_shadow_store_guarded)(
              out, addr, IRExpr_Unop(Iop_V256to64_0, shadow.ebits),
              32, 24, endness, guard, &helper_desc_64, widened_otag);
       break;
+#endif
       default:
          VG_(tool_panic)("Unsupported ebit shadow type");
    }
@@ -525,7 +538,7 @@ static void helper_load_slow(void* dst, Addr addr, SizeT size)
    }
 }
 
-static SizeT load_filter(SizeT size, SizeT ebits)
+static Ec_LargeInt load_filter(SizeT size, Ec_LargeInt ebits)
 {
    tl_assert((ebits & EC_(mk_byte_vector)(size, ~EC_VALID_EBITS)) == 0);
    return ebits & EC_(mk_byte_vector)(size, ~EC_PROTECTED_TAG);
@@ -560,6 +573,7 @@ static VG_REGPARM(1) SizeT helper_load_ebit_32(Addr addr)
    return r;
 }
 
+#ifdef EC_64INT
 static VG_REGPARM(1) SizeT helper_load_ebit_64(Addr addr)
 {
    ULong r;
@@ -570,6 +584,7 @@ static VG_REGPARM(1) SizeT helper_load_ebit_64(Addr addr)
    }
    return r;
 }
+#endif
 
 static IRExpr* gen_shadow_load_part(
       IRSB* out, IREndness e, IRType shadow_type, IRExpr* addr, SizeT value_size, SizeT offset,
@@ -641,10 +656,21 @@ Ec_ShadowExpr EC_(gen_shadow_load_guarded)(
                "ec_load_ebit_32", VG_(fnptr_to_fnentry)(helper_load_ebit_32), guard);
       break;
    case Ity_I64:
+#ifdef EC_64INT
       r.ebits = gen_shadow_load_part(
                out, e, Ity_I64, addr, 8, 0,
                "ec_load_ebit_64", VG_(fnptr_to_fnentry)(helper_load_ebit_64), guard);
+#else
+      r.ebits = IRExpr_Binop(Iop_32HLto64,
+              gen_shadow_load_part(
+                 out, e, Ity_I32, addr, 8, 0,
+                 "ec_load_ebit_32", VG_(fnptr_to_fnentry)(helper_load_ebit_32), guard),
+              gen_shadow_load_part(
+                 out, e, Ity_I32, addr, 8, 4,
+                 "ec_load_ebit_32", VG_(fnptr_to_fnentry)(helper_load_ebit_32), guard));
+#endif
       break;
+#ifdef EC_64INT
    case Ity_I128:
       r.ebits = IRExpr_Binop(Iop_64HLto128,
               gen_shadow_load_part(
@@ -678,7 +704,9 @@ Ec_ShadowExpr EC_(gen_shadow_load_guarded)(
                   out, e, Ity_I64, addr, 32, 24,
                   "ec_load_ebit_64", VG_(fnptr_to_fnentry)(helper_load_ebit_64), guard));
       break;
+#endif
    default:
+      ppIRType(type);
       VG_(tool_panic)("shadow_load_guarded unsupported ebit type");
    }
 

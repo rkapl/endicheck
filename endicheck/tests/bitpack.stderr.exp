@@ -9,7 +9,7 @@ Memory does not contain data of Target endianity
 Problem was found in block 0x........ at offset 2, size 6:
    0x........: N-N-N-N-N-N-
 The endianity check was requested here:
-   at 0x........: main (bitpack.c:25)
+   at 0x........: main (bitpack.c:28)
 
 
 ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)

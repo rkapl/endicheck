@@ -8,7 +8,10 @@
  * uses all kinds of vector extensions */
 
 int main() {
+    char t[64];
+    memset(t, 0, 64);
+    EC_DUMP_MEM(t, 64);
+
     void* m = calloc(1, 64);
     EC_DUMP_MEM(m, 64);
-    EC_CHECK_ENDIANITY(m, 64, "calloc");
 }
