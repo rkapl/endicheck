@@ -495,6 +495,7 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
 
       /* narrowing is just a byte shuffle */
       case Iop_64to16:
+      case Iop_64to32:
       case Iop_64to8:
       case Iop_32to16:
       case Iop_32to8:
