@@ -228,14 +228,16 @@ static IRExpr* assignNew(Ec_Env* env, IRExpr* expr)
 
 static IRExpr* mk_shadow_i128(Ec_Env* env,Ec_Shadow endianity)
 {
-   IRExpr* part = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, endianity)));
-   return assignNew(env, IRExpr_Binop(Iop_64HLto128, part, part));
+   IRExpr* part0 = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_ANY, endianity)));
+   IRExpr* part1 = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, endianity, endianity)));
+   return assignNew(env, IRExpr_Binop(Iop_64HLto128, part0, part1));
 }
 
 static IRExpr* mk_shadow_v128(Ec_Env* env,Ec_Shadow endianity)
 {
-   IRExpr* part = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, endianity)));
-   return assignNew(env, IRExpr_Binop(Iop_64HLtoV128, part, part));
+   IRExpr* part0 = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_ANY, endianity)));
+   IRExpr* part1 = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, endianity, endianity)));
+   return assignNew(env, IRExpr_Binop(Iop_64HLtoV128, part0, part1));
 }
 
 static IRExpr* mk_shadow_v256(Ec_Env* env,Ec_Shadow endianity)
@@ -248,16 +250,16 @@ static IRExpr* mk_shadow_vector(Ec_Env* env,IRType ty, Ec_Shadow endianity)
 {
    switch(ty) {
       case Ity_I8:
-         return IRExpr_Const(IRConst_U8(EC_(mk_byte_vector)(1, endianity)));
+         return IRExpr_Const(IRConst_U8(EC_(mk_byte_vector)(1, EC_ANY, endianity)));
       case Ity_I16:
-         return IRExpr_Const(IRConst_U16(EC_(mk_byte_vector)(2, endianity)));
+         return IRExpr_Const(IRConst_U16(EC_(mk_byte_vector)(2, EC_ANY, endianity)));
       case Ity_I32:
       case Ity_F32:
-         return IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, endianity)));
+         return IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, EC_ANY, endianity)));
       case Ity_F64:
       case Ity_D64:
       case Ity_I64:
-         return IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, endianity)));
+         return IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_ANY, endianity)));
       case Ity_F128:
       case Ity_D128:
       case Ity_I128:
@@ -295,7 +297,7 @@ static IRExpr* change_width(Ec_Env* env, IRExpr* value, IRType to)
 
 static void helper_check_ebits(ULong ebits)
 {
-    if (ebits & ~EC_(mk_byte_vector)(8, 0x7)) {
+    if (ebits & ~EC_(mk_byte_vector)(8, 0x7, 0x7)) {
         VG_(message)(Vg_UserMsg, "Invalid ebits 0x%llx\n", ebits);
         VG_(tool_panic)("helper_check_ebits failure");
     }
@@ -438,48 +440,48 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
       case Iop_8Uto64:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or64,
-            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE_EMPTY) & 0xFFFFFFFFFFFFFF00)),
+            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE_EMPTY, EC_NATIVE_EMPTY) & 0xFFFFFFFFFFFFFF00)),
             inner.ebits);
          return r;
 
       case Iop_16Uto64:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or64,
-            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE_EMPTY) & 0xFFFFFFFFFFFF0000)),
+            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE_EMPTY, EC_NATIVE_EMPTY) & 0xFFFFFFFFFFFF0000)),
             inner.ebits);
          return r;
 
       case Iop_32Uto64:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or64,
-            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE_EMPTY) & 0xFFFFFFFF00000000)),
+            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE_EMPTY, EC_NATIVE_EMPTY) & 0xFFFFFFFF00000000)),
             inner.ebits);
          return r;
 
       case Iop_8Uto32:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or32,
-            IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, EC_NATIVE_EMPTY) & 0xFFFFFF00)),
+            IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, EC_NATIVE_EMPTY, EC_NATIVE_EMPTY) & 0xFFFFFF00)),
             inner.ebits);
          return r;
 
       case Iop_16Uto32:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or32,
-            IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, EC_NATIVE_EMPTY) & 0xFFFF0000)),
+            IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, EC_NATIVE_EMPTY, EC_NATIVE_EMPTY) & 0xFFFF0000)),
             inner.ebits);
          return r;
 
       case Iop_8Uto16:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or16,
-            IRExpr_Const(IRConst_U16(EC_(mk_byte_vector)(2, EC_NATIVE_EMPTY) & 0xFF00)),
+            IRExpr_Const(IRConst_U16(EC_(mk_byte_vector)(2, EC_NATIVE_EMPTY, EC_NATIVE_EMPTY) & 0xFF00)),
             inner.ebits);
          return r;
 
       case Iop_32UtoV128:
          r = expr2shadow(env, expr->Iex.Unop.arg);
-         tmp_const = IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, EC_NATIVE)));
+         tmp_const = IRExpr_Const(IRConst_U32(EC_(mk_byte_vector)(4, EC_NATIVE, EC_NATIVE)));
          r.ebits = IRExpr_Binop(Iop_64HLtoV128,
             assignNew(env, IRExpr_Binop(Iop_32HLto64, tmp_const, tmp_const)),
             assignNew(env, IRExpr_Binop(Iop_32HLto64, tmp_const, r.ebits))
@@ -488,7 +490,7 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
       case Iop_64UtoV128:
          r = expr2shadow(env, expr->Iex.Unop.arg);
          r.ebits = IRExpr_Binop(Iop_64HLtoV128,
-            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE))),
+            IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_NATIVE, EC_NATIVE))),
             r.ebits
          );
          return r;
@@ -569,8 +571,8 @@ typedef UChar shadow_vector __attribute__ ((vector_size (sizeof(Ec_LargeInt))));
 static VG_REGPARM(2) Ec_LargeInt helper_combine_or_shadow(Ec_LargeInt a_shadow, Ec_LargeInt b_shadow)
 {
    /* hopefully the compiler will recognize these are constants */
-   Ec_LargeInt tag_mask = EC_(mk_byte_vector)(sizeof(Ec_LargeInt), EC_EMPTY_TAG);
-   Ec_LargeInt native = EC_(mk_byte_vector)(sizeof(Ec_LargeInt), EC_NATIVE);
+   Ec_LargeInt tag_mask = EC_(mk_byte_vector)(sizeof(Ec_LargeInt),EC_EMPTY_TAG, EC_EMPTY_TAG);
+   Ec_LargeInt native = EC_(mk_byte_vector)(sizeof(Ec_LargeInt), EC_ANY, EC_NATIVE);
 
    /* True if both cells are full */
    Ec_LargeInt nempty_intersection = (~a_shadow & ~b_shadow) & tag_mask;
@@ -830,7 +832,6 @@ static Ec_LargeInt guess_constant(Ec_LargeInt value) {
    Ec_LargeInt acc = 0;
    for(int i = sizeof(Ec_LargeInt) - 1; i >= 0; i--) {
       acc = acc << 8;
-      Bool was_zero = still_zero;
       Ec_LargeInt leading = (value >> i*8);
       if (leading != 0)
          still_zero = False;
@@ -838,7 +839,7 @@ static Ec_LargeInt guess_constant(Ec_LargeInt value) {
       if (still_zero)
          acc |= EC_EMPTY_TAG;
 
-      acc |= (was_zero && i == 0) ? EC_ANY : EC_NATIVE;
+      acc |= (i == 0) ? EC_ANY : EC_NATIVE;
    }
    // VG_(message)(Vg_UserMsg, "guessed shadow %llx for constant %llx\n", acc, value);
    return acc;

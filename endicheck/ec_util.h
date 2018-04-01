@@ -49,13 +49,13 @@ typedef uint64_t Ec_LargeInt;
 #define EC_64INT
 #endif
 
-static inline ULong EC_(mk_byte_vector)(int length, UChar value)
+static inline ULong EC_(mk_byte_vector)(int length,  UChar first, UChar rest)
 {
    tl_assert(length > 0 && length <= sizeof(ULong));
-   Ec_LargeInt acc = 0;
-   for (int i = 0; i<length; i++) {
+   Ec_LargeInt acc = rest;
+   for (int i = 1; i<length; i++) {
       acc <<= 8;
-      acc |= value;
+      acc |= rest;
    }
    return acc;
 }

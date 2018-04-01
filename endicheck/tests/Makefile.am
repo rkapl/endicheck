@@ -35,3 +35,6 @@ EXTRA_DIST += load_store.vgtest load_store.stderr.exp
 
 check_PROGRAMS += calloc_is_any
 EXTRA_DIST += calloc_is_any.vgtest calloc_is_any.stderr.exp
+
+check_PROGRAMS += casted_byte
+EXTRA_DIST += casted_byte.vgtest casted_byte.stderr.exp
