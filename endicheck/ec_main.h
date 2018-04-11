@@ -28,8 +28,8 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __EC_INCLUDE_H
-#define __EC_INCLUDE_H
+#ifndef __EC_MAIN_H
+#define __EC_MAIN_H
 
 #include "pub_tool_basics.h"
 #include "pub_tool_tooliface.h"

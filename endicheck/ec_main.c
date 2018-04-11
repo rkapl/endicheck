@@ -38,7 +38,7 @@
 #include "pub_tool_otrack.h"
 #include "pub_tool_execontext.h"
 #include "pub_tool_threadstate.h"
-#include "ec_include.h"
+#include "ec_main.h"
 #include "ec_shadow.h"
 #include "ec_errors.h"
 #include "ec_util.h"

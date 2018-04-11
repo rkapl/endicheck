@@ -31,7 +31,7 @@
 #ifndef __EC_UTIL_H
 #define __EC_UTIL_H
 
-#include "ec_include.h"
+#include "ec_main.h"
 
 #if VG_WORDSIZE == 4
 #define EC_NATIVE_IRTYPE Ity_I32

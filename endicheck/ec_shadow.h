@@ -32,7 +32,7 @@
 #define __EC_SHADOW_H
 
 #include <stdint.h>
-#include "ec_include.h"
+#include "ec_main.h"
 
 typedef uint32_t Ec_Otag;
 #define EC_NO_OTAG 0

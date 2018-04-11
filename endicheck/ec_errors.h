@@ -31,7 +31,7 @@
 #ifndef __EC_ERRORS_H
 #define __EC_ERRORS_H
 
-#include "ec_include.h"
+#include "ec_main.h"
 #include "ec_shadow.h"
 
 extern Bool EC_(opt_check_syscalls);
