@@ -8,7 +8,7 @@ pkginclude_HEADERS = \
 	endicheck.h
 
 noinst_HEADERS = \
-	ec_include.h \
+	ec_main.h \
 	ec_shadow.h
 
 #----------------------------------------------------------------------------
