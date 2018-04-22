@@ -9,7 +9,9 @@ pkginclude_HEADERS = \
 
 noinst_HEADERS = \
 	ec_main.h \
-	ec_shadow.h
+	ec_shadow.h \
+	ec_util.h \
+	ec_errors.h
 
 #----------------------------------------------------------------------------
 # endicheck-<platform>
