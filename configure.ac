@@ -45,6 +45,12 @@ AC_PROG_CXX
 #         AC_SUBST([OBJCFLAGS])
 #        ])
 AC_PROG_RANLIB
+# Set LTO_RANLIB variable to an lto enabled ranlib
+if test "x$LTO_RANLIB" = "x"; then
+  AC_PATH_PROGS([LTO_RANLIB], [gcc-ranlib])
+fi
+AC_ARG_VAR([LTO_RANLIB],[Library indexer command for link time optimisation])
+
 # provide a very basic definition for AC_PROG_SED if it's not provided by
 # autoconf (as e.g. in autoconf 2.59).
 m4_ifndef([AC_PROG_SED],
@@ -59,6 +65,13 @@ if test "x$AR" = "x"; then
   AC_PATH_PROGS([AR], [`echo $LD | $SED 's/ld$/ar/'` "ar"], [ar])
 fi
 AC_ARG_VAR([AR],[Archiver command])
+
+# same for LTO_AR variable for lto enabled archiver
+if test "x$LTO_AR" = "x"; then
+  AC_PATH_PROGS([LTO_AR], [gcc-ar])
+fi
+AC_ARG_VAR([LTO_AR],[Archiver command for link time optimisation])
+
 
 # Check for the compiler support
 if test "${GCC}" != "yes" ; then
@@ -100,6 +113,11 @@ else
 fi
 rm $tmpfile
 
+# Make sure we can compile in C99 mode.
+AC_PROG_CC_C99
+if test "$ac_cv_prog_cc_c99" == "no"; then
+    AC_MSG_ERROR([Valgrind relies on a C compiler supporting C99])
+fi
 
 # We don't want gcc < 3.0
 AC_MSG_CHECKING([for a supported version of gcc])
@@ -1940,6 +1958,55 @@ AM_CONDITIONAL(HAS_MLONG_DOUBLE_128, test x$ac_compiler_supports_mlong_double_12
 FLAG_MLONG_DOUBLE_128="-mlong-double-128"
 AC_SUBST(FLAG_MLONG_DOUBLE_128)
 
+# does this toolchain support lto ?
+# Not checked for if --enable-lto=no was given, or if LTO_AR or LTO_RANLIG
+# are not defined
+# If not enable-lto=* arg is provided, default to no, as  lto builds are
+# a lot slower, and so not appropriate for Valgrind developments.
+# --enable-lto=yes should be used by distro packagers.
+AC_CACHE_CHECK([for using the link time optimisation], vg_cv_lto,
+   [AC_ARG_ENABLE(lto,
+      [  --enable-lto          enables building with link time optimisation],
+      [vg_cv_lto=$enableval],
+      [vg_cv_lto=no])])
+
+if test "x${vg_cv_lto}" != "xno" -a "x${LTO_AR}" != "x" -a "x${LTO_RANLIB}" != "x"; then
+AC_MSG_CHECKING([if toolchain accepts lto])
+safe_CFLAGS=$CFLAGS
+TEST_LTO_CFLAGS="-flto -flto-partition=one -fuse-linker-plugin"
+# Note : using 'one' partition is giving a slightly smaller/faster memcheck
+# and ld/lto-trans1 still needs a reasonable memory (about 0.5GB) when linking.
+CFLAGS="$TEST_LTO_CFLAGS -Werror"
+
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]], [[
+  extern void somefun(void);
+  somefun();
+  return 0;
+]])], [
+LTO_CFLAGS=$TEST_LTO_CFLAGS
+AC_MSG_RESULT([yes])
+], [
+LTO_CFLAGS=""
+AC_MSG_RESULT([no])
+])
+CFLAGS=$safe_CFLAGS
+fi
+
+AC_SUBST(LTO_CFLAGS)
+
+# if we could not compile with lto args, or lto was disabled,
+# then set LTO_AR/LTO_RANLIB to the non lto values
+# define in config.h ENABLE_LTO (not needed by the code currently, but
+# this guarantees we recompile everything if we re-configure and rebuild
+# in a build dir previously build with another value of --enable-lto
+if test "x${LTO_CFLAGS}" = "x"; then
+   LTO_AR=${AR}
+   LTO_RANLIB=${RANLIB}
+   vg_cv_lto=no
+else
+   vg_cv_lto=yes
+   AC_DEFINE([ENABLE_LTO], 1, [configured to build with lto link time optimisation])
+fi
 
 # Convenience function to check whether GCC supports a particular
 # warning option. Takes two arguments,
@@ -1999,6 +2066,7 @@ AC_GCC_WARNING_SUBST([cast-qual], [FLAG_W_CAST_QUAL])
 AC_GCC_WARNING_SUBST([old-style-declaration], [FLAG_W_OLD_STYLE_DECLARATION])
 AC_GCC_WARNING_SUBST([ignored-qualifiers], [FLAG_W_IGNORED_QUALIFIERS])
 AC_GCC_WARNING_SUBST([missing-parameter-type], [FLAG_W_MISSING_PARAMETER_TYPE])
+AC_GCC_WARNING_SUBST([logical-op], [FLAG_W_LOGICAL_OP])
 
 # Does this compiler support -Wformat-security ?
 # Special handling is needed, because certain GCC versions require -Wformat
@@ -2050,6 +2118,27 @@ if test "X$VGCONF_ARCH_PRI" = "Xarm"; then
 else
   AC_SUBST([FLAG_W_CAST_ALIGN], [-Wcast-align])
 fi
+
+# does this compiler support -faligned-new ?
+AC_MSG_CHECKING([if g++ accepts -faligned-new])
+
+safe_CXXFLAGS=$CXXFLAGS
+CXXFLAGS="-faligned-new -Werror"
+
+AC_LANG(C++)
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]], [[
+  return 0;
+]])], [
+FLAG_FALIGNED_NEW="-faligned-new"
+AC_MSG_RESULT([yes])
+], [
+FLAG_FALIGNED_NEW=""
+AC_MSG_RESULT([no])
+])
+CXXFLAGS=$safe_CXXFLAGS
+AC_LANG(C)
+
+AC_SUBST(FLAG_FALIGNED_NEW)
 
 # does this compiler support -fno-stack-protector ?
 AC_MSG_CHECKING([if gcc accepts -fno-stack-protector])
@@ -4560,6 +4649,7 @@ cat<<EOF
          Primary build arch: ${VGCONF_ARCH_PRI}
        Secondary build arch: ${VGCONF_ARCH_SEC}
                    Build OS: ${VGCONF_OS}
+     Link Time Optimisation: ${vg_cv_lto}
        Primary build target: ${VGCONF_PLATFORM_PRI_CAPS}
      Secondary build target: ${VGCONF_PLATFORM_SEC_CAPS}
            Platform variant: ${VGCONF_PLATVARIANT}

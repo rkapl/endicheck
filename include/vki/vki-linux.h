@@ -971,6 +971,11 @@ struct vki_sctp_getaddrs {
 // From linux-2.6.8.1/include/linux/resource.h
 //----------------------------------------------------------------------
 
+#define VKI_RUSAGE_SELF     0
+#define VKI_RUSAGE_CHILDREN (-1)
+#define VKI_RUSAGE_BOTH     (-2)        /* sys_wait4() uses this */
+#define VKI_RUSAGE_THREAD   1           /* only the calling thread */
+
 struct	vki_rusage {
 	struct vki_timeval ru_utime;	/* user time used */
 	struct vki_timeval ru_stime;	/* system time used */
@@ -1200,6 +1205,7 @@ struct vki_sembuf {
 union vki_semun {
 	int val;			/* value for SETVAL */
 	struct vki_semid_ds __user *buf;	/* buffer for IPC_STAT & IPC_SET */
+	struct vki_semid64_ds __user *buf64;	/* buffer for IPC_STAT & IPC_SET */
 	unsigned short __user *array;	/* array for GETALL & SETALL */
 	struct vki_seminfo __user *__buf;	/* buffer for IPC_INFO */
 	void __user *__pad;
@@ -1770,18 +1776,23 @@ struct vki_ppdev_frob_struct {
 
 #define VKI_BLKROSET   _VKI_IO(0x12,93)	/* set device read-only (0 = read-write) */
 #define VKI_BLKROGET   _VKI_IO(0x12,94)	/* get read-only status (0 = read_write) */
+#define VKI_BLKRRPART  _VKI_IO(0x12,95) /* re-read partition table */
 #define VKI_BLKGETSIZE _VKI_IO(0x12,96) /* return device size /512 (long *arg) */
+#define VKI_BLKFLSBUF  _VKI_IO(0x12,97) /* flush buffer cache */
 #define VKI_BLKRASET   _VKI_IO(0x12,98)	/* set read ahead for block device */
 #define VKI_BLKRAGET   _VKI_IO(0x12,99)	/* get current read ahead setting */
 #define VKI_BLKFRASET  _VKI_IO(0x12,100)/* set filesystem (mm/filemap.c) read-ahead */
 #define VKI_BLKFRAGET  _VKI_IO(0x12,101)/* get filesystem (mm/filemap.c) read-ahead */
+#define VKI_BLKSECTSET _VKI_IO(0x12,102)/* set max sectors per request (ll_rw_blk.c) */
 #define VKI_BLKSECTGET _VKI_IO(0x12,103)/* get max sectors per request (ll_rw_blk.c) */
 #define VKI_BLKSSZGET  _VKI_IO(0x12,104)/* get block device sector size */
 #define VKI_BLKBSZGET  _VKI_IOR(0x12,112,vki_size_t)
 #define VKI_BLKBSZSET  _VKI_IOW(0x12,113,vki_size_t)
 #define VKI_BLKGETSIZE64 _VKI_IOR(0x12,114,vki_size_t) /* return device size in bytes (u64 *arg) */
+#define VKI_BLKDISCARD _VKI_IO(0x12,119)
 #define VKI_BLKPBSZGET _VKI_IO(0x12,123)
 #define VKI_BLKDISCARDZEROES _VKI_IO(0x12,124)
+#define VKI_BLKZEROOUT _VKI_IO(0x12,127)
 
 #define VKI_FIBMAP	_VKI_IO(0x00,1)	/* bmap access */
 #define VKI_FIGETBSZ    _VKI_IO(0x00,2)	/* get the block size used for bmap */
@@ -4749,6 +4760,36 @@ struct vki_serial_struct {
 # define VKI_PR_FP_MODE_FRE         (1 << 1)     /* 32b compatibility */
 
 #endif // __VKI_LINUX_H
+
+//----------------------------------------------------------------------
+// From linux-4.10/include/uapi/linux/blkzoned.h
+//----------------------------------------------------------------------
+
+struct vki_blk_zone {
+	__vki_u64	start;
+	__vki_u64	len;
+	__vki_u64	wp;
+	__vki_u8	type;
+	__vki_u8	cond;
+	__vki_u8	non_seq;
+	__vki_u8	reset;
+	__vki_u8	reserved[36];
+};
+
+struct vki_blk_zone_report {
+	__vki_u64		sector;
+	__vki_u32		nr_zones;
+	__vki_u8		reserved[4];
+	struct vki_blk_zone	zones[0];
+};
+
+struct vki_blk_zone_range {
+	__vki_u64		sector;
+	__vki_u64		nr_sectors;
+};
+
+#define VKI_BLKREPORTZONE	_VKI_IOWR(0x12, 130, struct vki_blk_zone_report)
+#define VKI_BLKRESETZONE	_VKI_IOW(0x12, 131, struct vki_blk_zone_range)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

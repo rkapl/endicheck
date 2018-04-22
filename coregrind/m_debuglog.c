@@ -130,7 +130,7 @@ static UInt local_sys_write_stderr ( const HChar* buf, Int n )
       "addq  $256, %%rsp\n"     /* restore stack ptr */
       : /*wr*/
       : /*rd*/    "r" (block)
-      : /*trash*/ "rax", "rdi", "rsi", "rdx", "memory", "cc"
+      : /*trash*/ "rax", "rdi", "rsi", "rdx", "memory", "cc", "rcx", "r11"
    );
    if (block[0] < 0) 
       block[0] = -1;
@@ -146,7 +146,8 @@ static UInt local_sys_getpid ( void )
       "movl %%eax, %0\n"   /* set __res = %eax */
       : "=mr" (__res)
       :
-      : "rax" );
+      : "rax", "rcx", "r11"
+   );
    return __res;
 }
 
@@ -479,7 +480,7 @@ static UInt local_sys_getpid ( void )
 static UInt local_sys_write_stderr ( const HChar* buf, Int n )
 {
    volatile Long block[2];
-   block[0] = (Long)buf;
+   block[0] = (Long)(Addr)buf;
    block[1] = n;
    __asm__ volatile (
       "li   $4, 2\n\t"      /* std output*/
