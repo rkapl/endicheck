@@ -212,6 +212,7 @@ noinst_HEADERS = \
 	pub_core_mallocfree.h	\
 	pub_core_options.h	\
 	pub_core_oset.h		\
+	pub_core_otrack.h	\
 	pub_core_poolalloc.h	\
 	pub_core_rangemap.h	\
 	pub_core_redir.h	\
