@@ -1369,7 +1369,7 @@ Bool EC_(opt_protection) = True;
 
 static Bool ec_process_cmd_line_options(const char* arg)
 {
-   if VG_BOOL_CLO(arg, "--alow-unknown", EC_(opt_allow_unknown)) {}
+   if VG_BOOL_CLO(arg, "--allow-unknown", EC_(opt_allow_unknown)) {}
    else if VG_BOOL_CLO(arg, "--guess-const-size", EC_(opt_guess_const_size)) {}
    else if VG_BOOL_CLO(arg, "--track-origins", EC_(opt_track_origins)) {}
    else if VG_BOOL_CLO(arg, "--protection", EC_(opt_protection)) {}
