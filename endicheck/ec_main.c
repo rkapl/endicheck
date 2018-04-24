@@ -589,9 +589,9 @@ static VG_REGPARM(2) Ec_LargeInt helper_combine_or_shadow(Ec_LargeInt a_shadow, 
       shadow_vector va_tags = (shadow_vector) (a_shadow & tag_mask);
       shadow_vector vb_tags = (shadow_vector) (b_shadow & tag_mask);
 
-      shadow_vector va_filtered_shadow = (va_tags == 0) & ((shadow_vector)a_shadow);
-      shadow_vector vb_filtered_shadow = (vb_tags == 0) & ((shadow_vector)b_shadow);
-      shadow_vector empty_shadow = (((shadow_vector)empty_union) != 0) & ((shadow_vector) native);
+      shadow_vector va_filtered_shadow = (va_tags == (shadow_vector)(Ec_LargeInt) 0) & ((shadow_vector)a_shadow);
+      shadow_vector vb_filtered_shadow = (vb_tags == (shadow_vector)(Ec_LargeInt) 0) & ((shadow_vector)b_shadow);
+      shadow_vector empty_shadow = (((shadow_vector) empty_union) != (shadow_vector)(Ec_LargeInt) 0) & ((shadow_vector) native);
 
       Ec_LargeInt shadow = ((Ec_LargeInt)va_filtered_shadow) | ((Ec_LargeInt)vb_filtered_shadow) | ((Ec_LargeInt)empty_shadow);
       return (shadow & ~tag_mask) | empty_union;
