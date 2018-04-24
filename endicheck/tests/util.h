@@ -12,7 +12,6 @@
 static inline void swapmem(void* ptr, size_t size) 
 {
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    asdsafl989
     assert(size%2 == 0);
     uint8_t* cptr = ptr;
     size_t i;
