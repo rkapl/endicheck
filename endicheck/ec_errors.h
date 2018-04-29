@@ -34,7 +34,6 @@
 #include "ec_main.h"
 #include "ec_shadow.h"
 
-extern Bool EC_(opt_check_syscalls);
 extern Bool EC_(opt_allow_unknown);
 extern Bool EC_(opt_report_different_origins);
 

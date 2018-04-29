@@ -44,27 +44,39 @@
 #include "ec_util.h"
 #include <stddef.h>
 
+/* Heap allocation tag for Valgrind core malloc */
 #define EC_INSTRUMENT_HEAPID "ec_instrument"
 
+/* Common data needed by instrumentation routines */
 typedef struct {
+      /* Where to output VexIR */
       IRSB* out_sb;
+      /* Typing of variables (out_sb->tyenv can be used instead)*/
       IRTypeEnv* tyenv;
+      /* Guest native word size */
       IRType word_type;
+
+      /* Note: Do not use the following directly, there are helpers to get
+       * shadow variables and state (and it wouldn't work for
+       * shadow_otag_state_base anyway) */
+
+      /* Offset to get an ebit shadow variable for a regular one */
       IRTemp shadow_ebit_temp_base;
+      /* Offset to get an OTag shadow variable for a regular one */
       IRTemp shadow_otag_temp_base;
 
+      /* Offset to get a ebit guest state area for regular one */
       IRTemp shadow_ebit_state_base;
+      /* Offset to get a ebit guest state area for regular one */
       IRTemp shadow_otag_state_base;
 } Ec_Env;
 
-static void EC_(post_clo_init)(void)
-{
-}
-
+/* shortcut to output new statement */
 static void stmt(Ec_Env* env, IRStmt* stmt) {
    addStmtToIRSB(env->out_sb, stmt);
 }
 
+/* Check if it makes sense to track endianity for a given VexIR type */
 static Bool has_endianity(IRType ty)
 {
    switch(ty) {
@@ -94,21 +106,27 @@ static Bool has_endianity(IRType ty)
    }
 }
 
+/* Get the default endianity for a given type */
 static Ec_Shadow default_endianity(IRType ty)
 {
    tl_assert(has_endianity(ty));
    return (ty == Ity_I8) ? EC_ANY : EC_NATIVE;
 }
 
+/* Extract endianity from ebits (strips out other ebits) */
 Ec_Endianity EC_(endianity_for_shadow)(Ec_Shadow shadow) {
    return shadow & 0x3;
 }
 
+/* Checks if the ebits have the `empty` flag set */
 Bool EC_(is_empty_for_shadow) (Ec_Shadow shadow) {
    return shadow & EC_EMPTY_TAG;
 }
 
-/* Get a type of a temp's shadow */
+/* Get a type for ebits of a given type.
+ *
+ * For example F32 gets I32 to store all four bytes of ebits.
+ * */
 static IRType type2ebit(IRType ty)
 {
    switch(ty) {
@@ -136,8 +154,8 @@ static IRType type2ebit(IRType ty)
       case Ity_I128:
       case Ity_V128:
       case Ity_V256:
-         /* We could try to make these types smaller (we don't need 8 bits per byte),
-          * but for simplicity we don't pack them */
+         /* We could try to make these types smaller (we don't need 8 bits, just
+          * four per byte), but for simplicity we don't pack them */
          return ty;
 
       default:
@@ -145,6 +163,7 @@ static IRType type2ebit(IRType ty)
    }
 }
 
+/* VexIR helper to obtain the current execution context (OTag) */
 static VG_REGPARM(0) ULong helper_gen_exectx(void)
 {
    ThreadId tid = VG_(get_running_tid)();
@@ -155,6 +174,7 @@ static VG_REGPARM(0) ULong helper_gen_exectx(void)
    return otag;
 }
 
+/* Generates the VexIR to obtain the current OTag (using helper_gen_exectx) */
 static IRExpr* current_otag(Ec_Env *env)
 {
    tl_assert(EC_(opt_track_origins));
@@ -165,37 +185,38 @@ static IRExpr* current_otag(Ec_Env *env)
    return expr;
 }
 
-static Ec_ShadowExpr add_current_otag(Ec_Env *env, IRExpr *expr)
+/* Combine the ebits with current OTag to generate full shadow for a variable */
+static Ec_ShadowExpr add_current_otag(Ec_Env *env, IRExpr *ebits)
 {
    Ec_ShadowExpr r;
-   r.ebits = expr;
+   r.ebits = ebits;
    r.origin = NULL;
    if (EC_(opt_track_origins))
       r.origin = current_otag(env);
    return r;
 }
 
-/* Get a shadow ebit temp variable corresponding to a temp */
+/* Get a shadow ebit temp variable corresponding to an original temp. */
 static IRTemp temp2ebits(Ec_Env* env, IRTemp temp)
 {
    return temp + env->shadow_ebit_temp_base;
 }
 
-/* Get a otag temp variable corresponding to a temp */
+/* Get a otag temp variable corresponding to an original temp. */
 static IRTemp temp2otag(Ec_Env* env, IRTemp temp)
 {
    tl_assert(EC_(opt_track_origins));
    return temp + env->shadow_otag_temp_base;
 }
 
-/*  Get a shadow state ebit offset corresonding to a given state offset */
+/* Get a shadow state ebit offset corresonding to a given state offset */
 static Int state2ebits(Ec_Env* env, Int offset)
 {
    return offset + env->shadow_ebit_state_base;
 }
 
 /*  Get a shadow state origin trackings offset corresonding to a given state offset.
- *  A simple wrapper around get_otrack_shadow_offset.
+ *  A simple wrapper around VG_(get_otrack_shadow_offset).
  */
 static Int state2otag(Ec_Env* env, Int offset, IRType type)
 {
@@ -212,6 +233,8 @@ static Int state2otag(Ec_Env* env, Int offset, IRType type)
  *
  * We use this function every time when an expression (which was previously flat)
  * is expanded to a non-flat one or when we make a composite constant.
+ *
+ * In future, we might replace this by compilation pass.
  */
 static IRExpr* assignNew(Ec_Env* env, IRExpr* expr)
 {
@@ -226,26 +249,31 @@ static IRExpr* assignNew(Ec_Env* env, IRExpr* expr)
    return IRExpr_RdTmp(tmp);
 }
 
-static IRExpr* mk_shadow_i128(Ec_Env* env,Ec_Shadow endianity)
+/* See mk_shadow_vector below */
+static IRExpr* mk_shadow_i128(Ec_Env* env, Ec_Shadow endianity)
 {
    IRExpr* part0 = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_ANY, endianity)));
    IRExpr* part1 = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, endianity, endianity)));
    return assignNew(env, IRExpr_Binop(Iop_64HLto128, part0, part1));
 }
 
-static IRExpr* mk_shadow_v128(Ec_Env* env,Ec_Shadow endianity)
+/* See mk_shadow_vector below */
+static IRExpr* mk_shadow_v128(Ec_Env* env, Ec_Shadow endianity)
 {
    IRExpr* part0 = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, EC_ANY, endianity)));
    IRExpr* part1 = IRExpr_Const(IRConst_U64(EC_(mk_byte_vector)(8, endianity, endianity)));
    return assignNew(env, IRExpr_Binop(Iop_64HLtoV128, part0, part1));
 }
 
-static IRExpr* mk_shadow_v256(Ec_Env* env,Ec_Shadow endianity)
+/* See mk_shadow_vector below */
+static IRExpr* mk_shadow_v256(Ec_Env* env, Ec_Shadow endianity)
 {
    IRExpr* part = assignNew(env, mk_shadow_v128(env, endianity));
    return assignNew(env, IRExpr_Binop(Iop_V128HLtoV256, part, part));
 }
 
+/* Construct shadow ebits values containing the given endianity for all bytes, except
+ * the first one, which is marked EC_ANY. Generic for any values. */
 static IRExpr* mk_shadow_vector(Ec_Env* env,IRType ty, Ec_Shadow endianity)
 {
    switch(ty) {
@@ -274,11 +302,13 @@ static IRExpr* mk_shadow_vector(Ec_Env* env,IRType ty, Ec_Shadow endianity)
    }
 }
 
+/* Widen a VexIR expression to 64-bit (can be used for 64-bit) */
 static IRExpr* widen_to_64(Ec_Env* env, IRExpr* from)
 {
    return assignNew(env, EC_(change_width)(env->tyenv, from, Ity_I64));
 }
 
+/* Widen a VexIR expression from 32-bit to a given type (32-bit or 64-bit) */
 static IRExpr* widen_from_32(Ec_Env* env, IRExpr* from, IRType dst)
 {
    IRType type = typeOfIRExpr(env->tyenv, from);
@@ -286,15 +316,18 @@ static IRExpr* widen_from_32(Ec_Env* env, IRExpr* from, IRType dst)
    return assignNew(env, EC_(change_width)(env->tyenv, from, dst));
 }
 
+/* Narrow a VexIR expresion to 32-bit */
 static IRExpr* narrow_to_32(Ec_Env* env, IRExpr* from) {
    return assignNew(env, EC_(change_width)(env->tyenv, from, Ity_I32));
 }
 
+/* Narrow/widen a VexIR expression to a given type (can be the same) */
 static IRExpr* change_width(Ec_Env* env, IRExpr* value, IRType to)
 {
     return assignNew(env, EC_(change_width)(env->tyenv, value, to));
 }
 
+/* Helper: Perform a sanity check (assert) on ebits */
 static void helper_check_ebits(ULong ebits)
 {
     if (ebits & ~EC_(mk_byte_vector)(8, 0x7, 0x7)) {
@@ -303,16 +336,21 @@ static void helper_check_ebits(ULong ebits)
     }
 }
 
+/* Perform a sanity check (assert) on ebits, works only for =< native size.
+ * Use the function below instead. */
 static void check_part(Ec_Env* env, IRExpr* ebits)
 {
     stmt(env, IRStmt_Dirty(unsafeIRDirty_0_N(
-                0, "ec_check_ebits", VG_(fnptr_to_fnentry)(helper_check_ebits), 
+                0, "ec_check_ebits", VG_(fnptr_to_fnentry)(helper_check_ebits),
                 mkIRExprVec_1(ebits))));
 }
 
-/* Will place an assertion on the ebits -- it will check if any invalid bits are set */
-static void check_ebits(Ec_Env* env, IRExpr* ebits)
-{
+/* Will place an assertion on the ebits -- it will check if any invalid bits are set.
+ *
+ * Not used by default (too slow), but it can be placed at strategic points if a
+ * developer runs into problems, like garbage in shadow memory.
+ */
+static void __attribute__ ((unused)) check_ebits(Ec_Env* env, IRExpr* ebits) {
     IRType type = typeOfIRExpr(env->tyenv, ebits);
     switch (type) {
         case Ity_I8:
@@ -340,15 +378,18 @@ static void check_ebits(Ec_Env* env, IRExpr* ebits)
     }
 }
 
+/* Provide the default shadow expression for a given type.
+ *
+ * The default shadow is EC_ANY ebits for the first byte, EC_NATIVE for the
+ * remaining and no EC_EMPTY flags. OTag will be the current otag. */
 static Ec_ShadowExpr default_shadow_for_type(Ec_Env* env, IRType expr_type)
 {
    tl_assert(has_endianity(expr_type));
    return add_current_otag(env, mk_shadow_vector(env, type2ebit(expr_type), default_endianity(expr_type)));
 }
 
-/* Returns a default shadow value (usually EC_NATIVE) for the given
- * type of expression.
- */
+/* Provide the default shadow expression for a given type. Shortcut for
+ * default_shadow_for_type. */
 static Ec_ShadowExpr default_shadow(Ec_Env* env, IRExpr* expr)
 {
    IRType expr_type = typeOfIRExpr(env->tyenv, expr);
@@ -406,17 +447,7 @@ static Ec_ShadowExpr same_for_shadow(Ec_Env* env, IRExpr* expr)
    return r;
 }
 
-/* Prepare the shadow of inner expression and the result with the otag copied */
-static void unop2shadow_inner_helper(
-      Ec_Env* env, Ec_ShadowExpr* result, Ec_ShadowExpr* inner,
-      IRExpr* expr)
-{
-   *inner = same_for_shadow(env, expr);
-   inner->ebits = assignNew(env, inner->ebits);
-   result->origin = inner->origin;
-   result->ebits = NULL;
-}
-
+/* Handler for Iop_GetElem<>x<>. We extract the ebits and copy origin. */
 static Ec_ShadowExpr vector_get2shadow(Ec_Env* env, IRExpr* expr)
 {
    /* first argument is the vector, second index */
@@ -429,6 +460,19 @@ static Ec_ShadowExpr vector_get2shadow(Ec_Env* env, IRExpr* expr)
    return r;
 }
 
+/* Prepare the shadow of and unary operation and the result with the otag copied.
+ * Used by unop2shadow. */
+static void unop2shadow_inner_helper(
+      Ec_Env* env, Ec_ShadowExpr* result, Ec_ShadowExpr* inner,
+      IRExpr* expr)
+{
+   *inner = same_for_shadow(env, expr);
+   inner->ebits = assignNew(env, inner->ebits);
+   result->origin = inner->origin;
+   result->ebits = NULL;
+}
+
+/* Handler for all unary expressions */
 static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
 {
 
@@ -436,7 +480,7 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
    IRExpr* tmp_const = NULL;
 
    switch (expr->Iex.Unop.op) {
-      // for widening, mark the new bytes as NATIVE_EMPTY
+      /* for widening, mark the new bytes as NATIVE_EMPTY */
       case Iop_8Uto64:
          unop2shadow_inner_helper(env, &r, &inner, expr);
          r.ebits = IRExpr_Binop(Iop_Or64,
@@ -560,6 +604,8 @@ static Ec_ShadowExpr unop2shadow(Ec_Env* env, IRExpr* expr)
    VG_(tool_panic)("Unhandled case unop2shadow");
 }
 
+/* Separate empty tags from endianess tags. Output expressions are stored in
+ * endianess and tags. From is the shadow ebit expression to separate. */
 static void split_empty_tags(Ec_Env* env, IRExpr* from, IRExpr** endianess, IRExpr** tags)
 {
    IRType type = typeOfIRExpr(env->tyenv, from);
@@ -568,6 +614,10 @@ static void split_empty_tags(Ec_Env* env, IRExpr* from, IRExpr** endianess, IREx
 }
 
 typedef UChar shadow_vector __attribute__ ((vector_size (sizeof(Ec_LargeInt))));
+
+/* Helper to handle bitwise OR. OR is the most complicated bitwise operation,
+ * due to the disjointness analysis, so we use helper for that. We use some
+ * serious vector magic too. */
 static VG_REGPARM(2) Ec_LargeInt helper_combine_or_shadow(Ec_LargeInt a_shadow, Ec_LargeInt b_shadow)
 {
    /* hopefully the compiler will recognize these are constants */
@@ -598,6 +648,7 @@ static VG_REGPARM(2) Ec_LargeInt helper_combine_or_shadow(Ec_LargeInt a_shadow, 
    }
 }
 
+/* Handler for OR expressions. Uses a helper */
 static Ec_ShadowExpr or2shadow(Ec_Env* env, IRExpr* expr)
 {
    IRExpr* arg1 = assignNew(env, expr2shadow(env, expr->Iex.Binop.arg1).ebits);
@@ -610,6 +661,7 @@ static Ec_ShadowExpr or2shadow(Ec_Env* env, IRExpr* expr)
    return add_current_otag(env, change_width(env, assignNew(env, v), typeOfIRExpr(env->tyenv, expr)));
 }
 
+/* Cross-platform helper for doing cmpeq, which is a bit rough on PPC */
 static IRExpr* cmpeq(Ec_Env* env, IRExpr* a, IRExpr* b)
 {
     /* PPC does not support comparisons on integers other than 32 bits, so
@@ -624,6 +676,7 @@ static IRExpr* cmpeq(Ec_Env* env, IRExpr* a, IRExpr* b)
 #   endif
 }
 
+/* Handler for bitwise binary operations */
 static Ec_ShadowExpr bitop2shadow(Ec_Env* env, IRExpr* expr)
 {
    tl_assert(expr->tag == Iex_Binop);
@@ -655,21 +708,8 @@ static Ec_ShadowExpr bitop2shadow(Ec_Env* env, IRExpr* expr)
    }
 }
 
-static int shift_type_size(IRType type) {
-   switch (type) {
-      case Ity_I8:
-         return 8;
-      case Ity_I16:
-         return 16;
-      case Ity_I32:
-         return 32;
-      case Ity_I64:
-         return 64;
-      default:
-         VG_(tool_panic)("Unsupported shift size");
-   }
-}
-
+/* Get a shift operation code in opposite direction, but with the same operation
+ * width. */
 static IROp reverse_shift(IROp shift)
 {
    if (shift >= Iop_Shl8 && shift <= Iop_Shl64) {
@@ -682,14 +722,19 @@ static IROp reverse_shift(IROp shift)
 
 }
 
+/* Handler for shift operations. Shifts by multiples of eight are handled
+ * specially.*/
 static Ec_ShadowExpr shift2shadow(Ec_Env* env, IRExpr* expr)
 {
    tl_assert(expr->tag == Iex_Binop);
    IRType type = typeOfIRExpr(env->tyenv, expr);
-   int value_size = shift_type_size(type);
+   int value_size = sizeofIRType(type);
+   /* Shift of size can no be be multiple of eight, unless zero, but that
+    * hopefully does not happen. */
    if (value_size == 8)
       return default_shadow(env, expr);
 
+   /* Decide if the shift is multiple of eight */
    /* Note: arg1 is the value, arg2 is the shift amount (8bit) */
    IRExpr* mod_8 = assignNew(env, IRExpr_Binop(
             Iop_And8, expr->Iex.Binop.arg2, IRExpr_Const(IRConst_U8(7))));
@@ -714,6 +759,7 @@ static Ec_ShadowExpr shift2shadow(Ec_Env* env, IRExpr* expr)
             value_shadow.ebits,
             expr->Iex.Binop.arg2))));
 
+   /* Use the correct algorithm based on shift size */
    Ec_ShadowExpr r;
    r.ebits = IRExpr_ITE(is_byte_sized, shifted_shadow, fallback_shadow.ebits);
    r.origin = NULL;
@@ -722,6 +768,7 @@ static Ec_ShadowExpr shift2shadow(Ec_Env* env, IRExpr* expr)
    return r;
 }
 
+/* Generic handler for binary operations */
 static Ec_ShadowExpr binop2shadow(Ec_Env* env, IRExpr* expr)
 {
    switch (expr->Iex.Binop.op) {
@@ -807,6 +854,7 @@ static Ec_ShadowExpr binop2shadow(Ec_Env* env, IRExpr* expr)
    }
 }
 
+/* Generic handler for ternary operations */
 static Ec_ShadowExpr triop2shadow(Ec_Env* env, IRExpr* expr)
 {
    IRTriop* op = expr->Iex.Triop.details;
@@ -816,6 +864,7 @@ static Ec_ShadowExpr triop2shadow(Ec_Env* env, IRExpr* expr)
    }
 }
 
+/* Generic handler for quad operations */
 static Ec_ShadowExpr qop2shadow(Ec_Env* env, IRExpr* expr)
 {
    IRQop* op = expr->Iex.Qop.details;
@@ -827,6 +876,9 @@ static Ec_ShadowExpr qop2shadow(Ec_Env* env, IRExpr* expr)
    }
 }
 
+/* Guess ebits for a constant value. This include EC_ANY or EC_NATIVE and the empty
+ * tags. They are set according to the constant value */
+/* TODO: also have EC_ANY always for the first byte ? */
 static Ec_LargeInt guess_constant(Ec_LargeInt value) {
    Bool still_zero = True;
    Ec_LargeInt acc = 0;
@@ -845,6 +897,8 @@ static Ec_LargeInt guess_constant(Ec_LargeInt value) {
    return acc;
 }
 
+/* Constant expression handler. Constant shadows are computed (guessed) from the
+ * actual constant value */
 static Ec_ShadowExpr const_guess2shadow(Ec_Env* env, IRExpr* expr)
 {
    IRType type = typeOfIRExpr(env->tyenv, expr);
@@ -872,6 +926,7 @@ static Ec_ShadowExpr const_guess2shadow(Ec_Env* env, IRExpr* expr)
    return r;
 }
 
+/* ITE (ternary expression) handler. Simple pass-through. */
 static Ec_ShadowExpr ite2shadow(Ec_Env* env, IRExpr* expr)
 {
    tl_assert(expr->tag == Iex_ITE);
@@ -886,6 +941,7 @@ static Ec_ShadowExpr ite2shadow(Ec_Env* env, IRExpr* expr)
    return r;
 }
 
+/* GET(register load) handler. Reads from shadow guest area. */
 static Ec_ShadowExpr get2shadow(Ec_Env* env, IRExpr* expr)
 {
    tl_assert(has_endianity(typeOfIRExpr(env->tyenv, expr)));
@@ -903,6 +959,7 @@ static Ec_ShadowExpr get2shadow(Ec_Env* env, IRExpr* expr)
    return r;
 }
 
+/* GETi(indexed register load) handler. Reads from shadow guest area. */
 static Ec_ShadowExpr geti2shadow(Ec_Env* env, IRExpr* expr)
 {
    tl_assert(has_endianity(typeOfIRExpr(env->tyenv, expr)));
@@ -928,6 +985,7 @@ static Ec_ShadowExpr geti2shadow(Ec_Env* env, IRExpr* expr)
    return r;
 }
 
+/* RDTMP(read timestamp) handler. Has default endianity tags. */
 static Ec_ShadowExpr rdtmp2shadow(Ec_Env* env, IRExpr* expr)
 {
    tl_assert(has_endianity(typeOfIRExpr(env->tyenv, expr)));
@@ -940,6 +998,9 @@ static Ec_ShadowExpr rdtmp2shadow(Ec_Env* env, IRExpr* expr)
    return r;
 }
 
+/* Root-level expression handler. Generates the expressions computing the shadow
+ * expression (ebits and OTags) shadowing the given expression. Relies on other
+ * `x2shadow` functiosn. */
 static Ec_ShadowExpr expr2shadow(Ec_Env* env, IRExpr* expr)
 {
    // ppIRExpr(expr); VG_(printf)("\n");
@@ -973,6 +1034,8 @@ static Ec_ShadowExpr expr2shadow(Ec_Env* env, IRExpr* expr)
    }
 }
 
+/* Handler for the wrtmp statement. Computes the shadow expression and writes it
+ * to the shadow variables. */
 static void shadow_wrtmp(Ec_Env *env, IRTemp to, IRExpr* from)
 {
    if (has_endianity(typeOfIRTemp(env->tyenv, to))) {
@@ -983,6 +1046,8 @@ static void shadow_wrtmp(Ec_Env *env, IRTemp to, IRExpr* from)
    }
 }
 
+/* Handler for the PUT(store register) statement. Computes the shadow
+ * expression and writes it to guest shadow area. */
 static void shadow_put(Ec_Env *env, Int to, IRExpr* from)
 {
    IRType type = typeOfIRExpr(env->tyenv, from);
@@ -997,6 +1062,8 @@ static void shadow_put(Ec_Env *env, Int to, IRExpr* from)
    }
 }
 
+/* Handler for the PUTi(store register, indexed) statement. Computes the shadow
+ * expression and writes it to guest shadow area. */
 static void shadow_puti(Ec_Env *env, IRPutI* puti)
 {
    IRRegArray* descr = puti->descr;
@@ -1009,7 +1076,8 @@ static void shadow_puti(Ec_Env *env, IRPutI* puti)
 
       if (EC_(opt_track_origins)) {
          /* Normally, otag is 32bits, but for reg_array otag, it may be 64bit
-          * (because the type dictates the stride)
+          * (because the type is used to dictate the stride, and sometimes
+          * Valgrind wants us to use 8 byte stride)
           */
          IRType otag_type = VG_(get_otrack_reg_array_equiv_int_type)(puti->descr);
          Int otag_base = VG_(get_otrack_shadow_offset)(puti->descr->base, sizeofIRType(puti->descr->elemTy));
@@ -1023,6 +1091,8 @@ static void shadow_puti(Ec_Env *env, IRPutI* puti)
    }
 }
 
+/* Handler for memory store statement. Computes the shadow expressions and calls
+ * out to ec_shadow to store them */
 static void shadow_store(Ec_Env *env, IREndness endianess, IRExpr* addr, IRExpr* value, IRExpr* guard)
 {
    IRType type = typeOfIRExpr(env->tyenv, value);
@@ -1038,6 +1108,7 @@ static void shadow_store(Ec_Env *env, IREndness endianess, IRExpr* addr, IRExpr*
    EC_(gen_shadow_store_guarded)(env->out_sb, endianess, addr, shadow, guard);
 }
 
+/* See above, but guarded */
 static void shadow_load_guarded(Ec_Env *env, IRLoadG* load_op)
 {
    Ec_ShadowExpr loaded;
@@ -1056,6 +1127,7 @@ static void shadow_load_guarded(Ec_Env *env, IRLoadG* load_op)
       stmt(env, IRStmt_WrTmp(temp2otag(env, load_op->dst), loaded.origin));
 }
 
+/* Dirty calls handler, we mark their results as native */
 static void shadow_dirty(Ec_Env* env, IRDirty* dirty)
 {
    if (dirty->tmp == IRTemp_INVALID)
@@ -1070,6 +1142,7 @@ static void shadow_dirty(Ec_Env* env, IRDirty* dirty)
    }
 }
 
+/* Helper: set a given memory area as EC_NATIVE. */
 static VG_REGPARM(2) void helper_set_default_shadow_mem(Addr base, SizeT size)
 {
    /* TODO: optimalize this */
@@ -1090,11 +1163,14 @@ static VG_REGPARM(2) void helper_set_default_shadow_mem(Addr base, SizeT size)
    }
 }
 
+/* CAS (compare and store) statement handler.
+ *
+ * It's doubtful that CAS will be used to handle data where endianity matters.
+ * For now, just mark everything that the CAS touches as native. It is
+ * complicated enough as-is.
+ */
 static void shadow_cas(Ec_Env* env, IRCAS* details)
 {
-   /* It's doubtful that CAS will be used to handle data where endianity matters. For now,
-    * just mark everything that the CAS touches as native.
-    */
    IRType base_type = typeOfIRTemp(env->tyenv, details->oldLo);
    tl_assert(!!details->expdHi == !!details->dataHi);
    if (details->expdHi) {
@@ -1125,6 +1201,7 @@ static void shadow_cas(Ec_Env* env, IRCAS* details)
          mkIRExprVec_2(details->addr, EC_(const_sizet)(mem_size)))));
 }
 
+/* LLSC (linked load and store conditional) statement handler. */
 static void shadow_llsc(Ec_Env* env, IRTemp result, IREndness end, IRExpr* addr, IRExpr* storedata)
 {
    /* Same as CAS -- just mark the data as native. */
@@ -1144,6 +1221,7 @@ static void shadow_llsc(Ec_Env* env, IRTemp result, IREndness end, IRExpr* addr,
    }
 }
 
+/* The most important entry point. Instruments the basic blocks of VexIR */
 static IRSB* EC_(instrument) (
    VgCallbackClosure* closure,
    IRSB* sb,
@@ -1159,6 +1237,7 @@ static IRSB* EC_(instrument) (
       VG_(tool_panic)("host/guest word size mismatch");
    }
 
+   /* Prepare the common variables used by the instrumentation */
    env.out_sb = deepCopyIRSBExceptStmts(sb);
    env.word_type = gWordTy;
    env.shadow_ebit_state_base = layout->total_sizeB;
@@ -1166,7 +1245,8 @@ static IRSB* EC_(instrument) (
    env.tyenv = env.out_sb->tyenv;
 
    /* Unlike memcheck, we try to get off with having direct mapping between temporaries and their
-    * shadow values. They are placed directly after the regular variables */
+    * shadow values. They are placed directly after the regular variables, so
+    * that we can compute their location by adding an offset. */
    int temp_count = sb->tyenv->types_used;
    env.shadow_ebit_temp_base = temp_count;
    env.shadow_otag_temp_base = temp_count*2;
@@ -1192,6 +1272,7 @@ static IRSB* EC_(instrument) (
       stmt(&env, sb->stmts[i] );
    }
 
+   /* Handle all statements one by one. :*/
    for(; i < sb->stmts_used; i++) {
       IRStmt* st = sb->stmts[i];
       switch (st->tag) {
@@ -1208,14 +1289,14 @@ static IRSB* EC_(instrument) (
             shadow_store(&env, st->Ist.Store.end, st->Ist.Store.addr, st->Ist.Store.data, NULL);
          break;
 
-         case Ist_Dirty: /* TODO: not yet implemented */
+         case Ist_Dirty:
             shadow_dirty(&env, st->Ist.Dirty.details);
          break;
 
-         case Ist_LoadG: /* TODO: convert to non-guarded case */
+         case Ist_LoadG:
             shadow_load_guarded(&env, st->Ist.LoadG.details);
          break;
-         case Ist_StoreG:/* TODO: convert to non-guarded case */
+         case Ist_StoreG:
             shadow_store(
                   &env, st->Ist.StoreG.details->end, st->Ist.StoreG.details->addr,
                   st->Ist.StoreG.details->data, st->Ist.StoreG.details->guard);
@@ -1245,17 +1326,27 @@ static IRSB* EC_(instrument) (
             VG_(printf)("\n");
             VG_(tool_panic)("endicheck: unhandled IRStmt");
       }
+      /* After doing the shadow operation, perform the original operation */
       stmt(&env, st);
    }
 
    return env.out_sb;
 }
 
+/* Valgrind callback, not needed */
+static void EC_(post_clo_init)(void)
+{
+}
+
+/* Valgrind callback, not needed */
 static void EC_(fini)(Int exitcode)
 {
 }
 
+/* Number for bytes per row of shadow memory dump */
 #define ECRQ_DUMP_ROW_SIZE 40
+
+/* Dump shadow memory (ebits) */
 void EC_(dump_mem_noheader)(Addr start, SizeT size)
 {
    for(size_t i = 0; i<size; i += ECRQ_DUMP_ROW_SIZE) {
@@ -1274,6 +1365,7 @@ void EC_(dump_mem_noheader)(Addr start, SizeT size)
    }
 }
 
+/* Dump shadow memory and include explanatory header with legend */
 void EC_(dump_mem)(Addr start, SizeT size)
 {
    VG_(message)(Vg_UserMsg, "Memory endianity dump (legend: Undefined, Native, Target, Any, - Empty):\n");
@@ -1281,6 +1373,7 @@ void EC_(dump_mem)(Addr start, SizeT size)
    VG_(message)(Vg_UserMsg, "\n");
 }
 
+/* Valgrind user-request handler for EC_DUMP_MEM */
 static void ecrq_dump_mem(UWord* arg)
 {
    Addr start = arg[1];
@@ -1288,6 +1381,7 @@ static void ecrq_dump_mem(UWord* arg)
    EC_(dump_mem)(start, size);
 }
 
+/* Valgrind user-request handler for EC_MARK_ENDIANITY */
 static void ecrq_mark_endian(UWord* arg)
 {
    Addr start = arg[1];
@@ -1298,6 +1392,7 @@ static void ecrq_mark_endian(UWord* arg)
    }
 }
 
+/* Valgrind user-request handler for EC_CHECK_ENDIANITY */
 static int ecrq_assert_endian(ThreadId tid, UWord* arg)
 {
    Addr start = arg[1];
@@ -1307,6 +1402,7 @@ static int ecrq_assert_endian(ThreadId tid, UWord* arg)
    return EC_(check_memory_endianity)(tid, start, size, msg);
 }
 
+/* Valgrind callback for stack growth. We mark all new memory as EC_UNKNOWN. */
 static void ec_new_mem_stack(Addr a, SizeT len)
 {
    for(SizeT i = 0; i<len; i++) {
@@ -1314,6 +1410,8 @@ static void ec_new_mem_stack(Addr a, SizeT len)
    }
 }
 
+/* Valgrind callback for stack growth, origin tracking variant. We mark all new
+ * memory as EC_UNKNOWN and add current otag. */
 static void ec_new_mem_stack_w_ECU(Addr a, SizeT len, UInt otag)
 {
    for(SizeT i = 0; i<len; i++) {
@@ -1322,6 +1420,8 @@ static void ec_new_mem_stack_w_ECU(Addr a, SizeT len, UInt otag)
    }
 }
 
+
+/* Valgrind user-request handler for EC_PROTECT_REGION and EC_UNPROTECT_REGION. */
 static int ecrq_protect_region(UWord* arg, Bool protected)
 {
    if (!EC_(opt_protection))
@@ -1332,6 +1432,7 @@ static int ecrq_protect_region(UWord* arg, Bool protected)
    return 0;
 }
 
+/* Valgrind callback for user request. Calls down to ecrq_* handlers */
 static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
 {
    UWord req = arg[0];
@@ -1363,10 +1464,21 @@ static Bool EC_(client_request) ( ThreadId tid, UWord* arg, UWord* ret )
    return False;
 }
 
+/* Other command-line options are defined in ec_shadow and ec_errors, if
+ * appropriate. */
+
+/* Command-line option to control constant shadow ebits handling. If true, the
+ * ebits are derived from constant value, otherwise it is treated as nullary
+ * arithmetic operation (default native endianity). */
 Bool EC_(opt_guess_const_size) = True;
+/* Enabled origin tracking. Same effect as mem-check. */
 Bool EC_(opt_track_origins) = False;
+/* Enable memory protection. Allow memory regions to be `protected`,
+ * automatically guarding against storing wrong endianity. Has performance
+ * impact. */
 Bool EC_(opt_protection) = True;
 
+/* Parse command-line options (even those defined in other files) */
 static Bool ec_process_cmd_line_options(const char* arg)
 {
    if VG_BOOL_CLO(arg, "--allow-unknown", EC_(opt_allow_unknown)) {}
@@ -1378,6 +1490,7 @@ static Bool ec_process_cmd_line_options(const char* arg)
    return True;
 }
 
+/* Print --help text */
 static void ec_print_usage(void) {
    VG_(printf)(
 "    --allow-unknown=yes|no      report unknown endianess as error?\n"
@@ -1388,11 +1501,15 @@ static void ec_print_usage(void) {
    );
 }
 
+/* Print --help-debug text */
 static void ec_print_debug_usage(void) {
 
 }
 
+/* Ec_Endianity tag names (short versions). */
 const char EC_(endianity_codes)[] = "UNTA";
+
+/* Ec_Endianity tag names (long versions). */
 const char* EC_(endianity_names)[] = {
    "Undefined",
    "Native",
@@ -1400,6 +1517,7 @@ const char* EC_(endianity_names)[] = {
    "Any"
 };
 
+/* Main entry point -- initializes all other callbacks */
 static void EC_(pre_clo_init)(void)
 {
    VG_(details_name)            ("endicheck");
@@ -1430,7 +1548,7 @@ static void EC_(pre_clo_init)(void)
       VG_(track_new_mem_stack_w_ECU)(ec_new_mem_stack_w_ECU);
    else
       VG_(track_new_mem_stack)(ec_new_mem_stack);
-      
+
    VG_(needs_command_line_options)(
             ec_process_cmd_line_options,
             ec_print_usage,

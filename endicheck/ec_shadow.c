@@ -27,9 +27,18 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-/* The shadow table is currently a simpler version of the table in mc_main.c. In future the table
-   manipulation code should be merged (not the leaf data, just the management)
-*/
+/* The shadow table is currently a simpler version of the table in mc_main.c.
+ * The system is similar to page translation. The OTag handling is different
+ * though.
+ *
+ * To recapitulate the terminology:
+ *  * secondary table: holds the endianess tags and otags
+ *  * primary table: holds the secondary tables
+ *
+ * We also use the term `ebits` to refer to the shadow memory contents and use
+ * the type Ec_Shadow for a single byte of the shadow memory. If multiple bytes
+ * are involved, we use regular types.
+ */
 
 #include "ec_shadow.h"
 #include "ec_util.h"
@@ -40,55 +49,80 @@
 #include "pub_tool_oset.h"
 #include <stdbool.h>
 
+/* Heap allocation tag for the Valgrind malloc */
 #define EC_SHADOW_HEAPID "ec_shadow"
 
 #if VG_WORDSIZE == 4
-/* cover the entire address space */
+/* Cover the entire 4 GiB address space on 32-bit archs. */
 #  define EC_PRIMARY_BITS  16
 #else
-/* Just handle the first 128G. */
-/* TODO: add auxiliary tables like memcheck */
+/* Just handle the first 128G in the d1irectly allocated primary table. */
 #  define EC_PRIMARY_BITS  21
+/* Enable the Auxiliary map mechanism (hash-table) for the rest of address space
+ */
 #  define EC_HAS_AUXMAP
 #endif
 
+/* Size of the primary table (in entries) */
 #define EC_PRIMARY_SIZE (1 << EC_PRIMARY_BITS)
+/* Mask (not shifted) for extracting the index into primary table */
 #define EC_PRIMARY_MASK (EC_PRIMARY_SIZE - 1)
 
+/* Address bits handled by the secondary shadow table. */
 #define EC_SECONDARY_BITS 16
+/* Size of the secondary table (both in entries and bytes) */
 #define EC_SECONDARY_SIZE (1 << EC_SECONDARY_BITS)
+/* Mask for extracting the index into secondary table */
 #define EC_SECONDARY_MASK (EC_SECONDARY_SIZE - 1)
 
+/* Number of bits in address for which a single origin tag is shared.
+ * In other words, OTag is shared for 2^EC_OTAG_GRANULARITY_BITS bytes */
 #define EC_OTAG_GRANULARITY_BITS 1
+
+/* Mask of address. Mask _out_ to get the index into secondary
+ * origin table */
 #define EC_OTAG_MASK ((1 << EC_OTAG_GRANULARITY_BITS) - 1)
 
+/* Secondary table for shadow tags */
 typedef struct {
-   uint8_t ebits[EC_SECONDARY_SIZE];
+   Ec_Shadow ebits[EC_SECONDARY_SIZE];
 } Ec_Secondary;
 
+/* Secondary table for shadow tags, when origin tracking is enabled */
 typedef struct {
    Ec_Secondary ebits;
    Ec_Otag otags[EC_SECONDARY_SIZE >> EC_OTAG_GRANULARITY_BITS];
 } Ec_SecondaryOtag;
 
+/* The primary table, redirects to secondary ones */
 typedef struct Ec_Primary {
    Ec_Secondary *entries[EC_PRIMARY_SIZE];
 } Ec_Primary;
 
+/* And here it is allocated */
 static Ec_Primary shadow_table;
 
 #ifdef EC_HAS_AUXMAP
+/* Auxiliary map entry. The `base` entry is the OSet key. */
 typedef struct {
    Addr base;
    Ec_Secondary* secondary;
 } Ec_AuxEntry;
-/* For simplicity, we don't yet have the L1 and L2 maps like MC does.
- * Otherwise, this is simply duplicated from MC */
+
+/* The auxilliary map */
 static OSet* shadow_aux_table = NULL;
 #endif
 
+/* The mask for currently used endianity tags, protection status and empty flag.
+ * The current layout is:
+ * * 2 bits the endianity tag
+ * * 1 bit empty flag
+ * * 1 bit protection flag (only valid for shadow memory, not for registers
+ *     etc.)
+ */
 #define EC_VALID_EBITS 0xF
 
+/* Initialize the shadow memory system (called by ec_main on startup) */
 void EC_(shadow_init)(void)
 {
 #ifdef EC_HAS_AUXMAP
@@ -98,16 +132,20 @@ void EC_(shadow_init)(void)
 #endif
 }
 
+/* Allocate and initialize secondary map when needed */
 static Ec_Secondary* alloc_secondary(void)
 {
    SizeT secondary_size = EC_(opt_track_origins) ? sizeof(Ec_SecondaryOtag) : sizeof(Ec_Secondary);
    return VG_(calloc)(EC_SHADOW_HEAPID, 1, secondary_size);
 }
 
+/* Get a secondary map for a given `orig_addr`. */
 static Ec_Secondary* get_secondary(Addr orig_addr)
 {
+   /* Discard the secondary bits, this function does not need them */
    Addr addr = orig_addr >> EC_SECONDARY_BITS;
 #ifdef EC_HAS_AUXMAP
+   /* Try auxilliary map if address is not handled by primary table */
    if ((addr & ~EC_PRIMARY_MASK) != 0) {
       Ec_AuxEntry key;
       key.base = addr;
@@ -124,6 +162,7 @@ static Ec_Secondary* get_secondary(Addr orig_addr)
 #else
    tl_assert((addr & ~EC_PRIMARY_MASK) == 0);
 #endif
+   /* Use the primary table */
    Ec_Secondary *sec = shadow_table.entries[addr];
    if (!sec) {
       sec = alloc_secondary();
@@ -132,6 +171,8 @@ static Ec_Secondary* get_secondary(Addr orig_addr)
    return sec;
 }
 
+/* Store meta-data for a given address. Does not manipulate the protection
+ * status. */
 void EC_(set_shadow)(Addr addr, Ec_Shadow endianity)
 {
    Ec_Secondary *map = get_secondary(addr);
@@ -140,24 +181,28 @@ void EC_(set_shadow)(Addr addr, Ec_Shadow endianity)
    *s |= endianity;
 }
 
+/* Load meta-data for a given address. Does not return the protection status. */
 Ec_Shadow EC_(get_shadow)(Addr addr)
 {
    Ec_Secondary *s = get_secondary(addr);
    return s->ebits[addr & EC_SECONDARY_MASK] & ~EC_PROTECTED_TAG;
 }
 
+/* Load meta-data for a given address, including the protection status. */
 Ec_Shadow EC_(get_shadow_with_protection)(Addr addr)
 {
    Ec_Secondary *s = get_secondary(addr);
    return s->ebits[addr & EC_SECONDARY_MASK];
 }
 
+/* Check if a given address is protected */
 Bool EC_(is_protected)(Addr addr)
 {
    Ec_Secondary *s = get_secondary(addr);
    return s->ebits[addr & EC_SECONDARY_MASK] & EC_PROTECTED_TAG;
 }
 
+/* Set the protection status of a given memory region */
 void EC_(set_protected)(Addr addr, SizeT size, Bool protected)
 {
    Ec_Secondary* map = get_secondary(addr);
@@ -171,17 +216,12 @@ void EC_(set_protected)(Addr addr, SizeT size, Bool protected)
    }
 }
 
+/* Get OTag for a given memory address */
 Ec_Otag EC_(get_shadow_otag)(Addr addr)
 {
    tl_assert(EC_(opt_track_origins));
    Ec_SecondaryOtag *s = (Ec_SecondaryOtag*) get_secondary(addr);
    return s->otags[(addr & EC_SECONDARY_MASK) >> EC_OTAG_GRANULARITY_BITS];
-}
-
-static uint8_t* get_ebit_ptr(Addr addr)
-{
-   Ec_Secondary *s = get_secondary(addr);
-   return &s->ebits[addr & EC_SECONDARY_MASK];
 }
 
 void EC_(set_shadow_otag)(Addr addr, Ec_Otag tag)
@@ -191,6 +231,19 @@ void EC_(set_shadow_otag)(Addr addr, Ec_Otag tag)
    s->otags[(addr & EC_SECONDARY_MASK) >> EC_OTAG_GRANULARITY_BITS] = tag;
 }
 
+/* Get pointer for the endianess meta-data shadow (what the load/stores)
+ * manipulate. The pointer can be incremented/decremented, as long as we stay in
+ * the same secondary map area. This can be checked using fits_map. 
+ *
+ * For this reason (it is more dangerous), this function is not exported and
+ * only used internally in this module for speed reasons. */
+static Ec_Shadow* get_ebit_ptr(Addr addr)
+{
+   Ec_Secondary *s = get_secondary(addr);
+   return &s->ebits[addr & EC_SECONDARY_MASK];
+}
+
+/* Return a Vex IR type for the host's native pointer size */
 static IRType word_type(void)
 {
    switch (sizeof(Addr)) {
@@ -204,7 +257,6 @@ static IRType word_type(void)
 }
 
 /* Does a value fit into a single shadow page, so that we can use single load/store?
- * The value has size (1 << amask).
  */
 static Bool fits_map(Addr addr, SizeT size)
 {
@@ -212,7 +264,8 @@ static Bool fits_map(Addr addr, SizeT size)
    return (diff >> EC_SECONDARY_BITS) == 0;
 }
 
-/* A slow byte-by byte version that supports crossing map boundaries */
+/* A fallback function for shadow store, working for any value size and
+ * location. Used when fits_map is false. Includes the protection checks. */
 static void helper_store_slow(Addr addr, SizeT size, Ec_Shadow* value, Ec_Otag otag)
 {
    tl_assert(size < EC_MAX_STORE);
@@ -228,11 +281,20 @@ static void helper_store_slow(Addr addr, SizeT size, Ec_Shadow* value, Ec_Otag o
       EC_(check_store)(addr, size, value, otag);
 }
 
+/*------------------------------------------------------------*/
+/*--- VexIR generators and helpers                         ---*/
+/*------------------------------------------------------------*/
+
+/* Note: helpers is a valgrind terminology for special functions callable
+ * directly from VexIR */
+
+/* Helper: Get origin tag for given address */
 static VG_REGPARM(1) Ec_Otag helper_get_otag(Addr addr)
 {
    return EC_(get_shadow_otag)(addr);
 }
 
+/* Helper: Set origin tag for given address range. */
 static VG_REGPARM(3) void helper_set_otag(Addr addr, SizeT size, Ec_Otag origin)
 {
    tl_assert(EC_(opt_track_origins));
@@ -248,13 +310,26 @@ static VG_REGPARM(3) void helper_set_otag(Addr addr, SizeT size, Ec_Otag origin)
    }
 }
 
+/*------------------------------------------------------------*/
+/*--- Store                                                ---*/
+/*------------------------------------------------------------*/
+
+/* Genereate an shadow memory store operation for both OTags and endianess tags */
 void EC_(gen_shadow_store)(IRSB* out, IREndness endness, IRExpr* addr, Ec_ShadowExpr shadow)
 {
    EC_(gen_shadow_store_guarded)(out, endness, addr, shadow, NULL);
 }
 
+/* Type for store helper when protection is disabled */
 typedef VG_REGPARM(2) void (*store_helper_fn)(Addr addr, SizeT ebits);
+/* Type for store helper when protection is enabled. 
+ *
+ * Note that the OTag is not stored by this function, it is only provided for
+ * error reporting. */
 typedef VG_REGPARM(3) void (*store_helper_protected_fn)(Addr addr, SizeT ebits, Ec_Otag otag);
+
+/* An information describing a store helper to use for a given value size.
+ * Includes names for debugging and protected/unprotected versions. */
 typedef struct {
    const char* store_fn_name;
    store_helper_fn store_fn;
@@ -262,6 +337,7 @@ typedef struct {
    store_helper_protected_fn store_protected_fn;
 } helper_descriptor;
 
+/* Check if given ebits are valid */
 static void check_stored_ebits(Ec_LargeInt ebits)
 {
    UChar valid = EC_PROTECTED_TAG | ~EC_VALID_EBITS;
@@ -271,6 +347,15 @@ static void check_stored_ebits(Ec_LargeInt ebits)
    }
 }
 
+/* The following section defines the protected/unprotected helpers for all
+ * operand sizes up to 64-bits. The naming sheme is:
+ *
+ * helper_store_ebit_<size>[_protected]
+ *
+ * The helpers have the same structure, except the 8-bit one, which can be a bit
+ * simplified. The either read/write the shadow memory themselves (the fast
+ * path), or revert to the helper_store_slow if the value does not fit in page.
+ */
 
 static VG_REGPARM(2) void helper_store_ebit_8(Addr addr, SizeT ebits)
 {
@@ -395,14 +480,36 @@ static const helper_descriptor helper_desc_64 = {
 };
 #endif
 
+/* Generate a single =< 64bit store part of store operation. Store operations
+ * are broken to =<64 bit units for easier handling.
+ */
 static void gen_ebit_store_part(
-      IRSB* out, IRExpr* addr, IRExpr* value, SizeT value_size, SizeT offset,
-      IREndness e, IRExpr* guard, const helper_descriptor* d, IRExpr* otag)
+      /* target for the generated VexIR */
+      IRSB* out,
+      /* store address of the whole operation */
+      IRExpr* addr,
+      /* store shadow value (ebits) */
+      IRExpr* value,
+      /* size of the stored value in bytes (must match value type) */
+      SizeT value_size,
+      /* offset of the store part inside the whole store operation,
+       * this is in-register offset (that is always big-endian) */
+      SizeT offset,
+      /* the store operation endianess, as provided by valgrind */
+      IREndness e,
+      /* guard (conditional operation), opt. */
+      IRExpr* guard,
+      /* set of available helpers for the given operation size */
+      const helper_descriptor* d,
+      /* otag value, opt. */
+      IRExpr* otag)
 {
    SizeT part_size = sizeofIRType(typeOfIRExpr(out->tyenv, value));
+   /* convert the offset to in-memory offset (endianess dependent) */
    if (e == Iend_LE)
       offset = value_size - (offset + part_size);
 
+   /* compute addr + offset */
    if (offset != 0) {
       IRTemp addr_offset_tmp = newIRTemp(out->tyenv, EC_NATIVE_IRTYPE);
       IRExpr* addr_offset = IRExpr_Binop(
@@ -412,12 +519,14 @@ static void gen_ebit_store_part(
       addr = IRExpr_RdTmp(addr_offset_tmp);
    }
 
+   /* widen to native word size, helper calls expect that */
    {
       IRTemp value_widened_tmp = newIRTemp(out->tyenv, EC_NATIVE_IRTYPE);
       addStmtToIRSB(out, IRStmt_WrTmp(value_widened_tmp, EC_(change_width)(out->tyenv, value, EC_NATIVE_IRTYPE)));
       value = IRExpr_RdTmp(value_widened_tmp);
    }
 
+   /* Choose and generate the correct helper */
    IRStmt* store_stmt = NULL;
    if (EC_(opt_protection)) {
       if (!EC_(opt_track_origins)) {
@@ -436,6 +545,12 @@ static void gen_ebit_store_part(
    addStmtToIRSB(out, store_stmt);
 }
 
+/* Genereate an shadow memory store operation for both otags and endianess tags 
+ * (stored in shadow).
+ *
+ * This function is called from ec_main for each store instruction.
+ *
+ * The operation will only be performed if guarded evaluates to true. */
 void EC_(gen_shadow_store_guarded)(
       IRSB* out, IREndness endness, IRExpr* addr, Ec_ShadowExpr shadow, IRExpr* guard)
 {
@@ -449,6 +564,7 @@ void EC_(gen_shadow_store_guarded)(
 #endif
 
    IRExpr *widened_otag = NULL;
+   /* Widen the otag (helpers expect native word) */
    if (EC_(opt_track_origins)) {
       if (sizeof (void*) == 4) {
          widened_otag = shadow.origin;
@@ -459,6 +575,8 @@ void EC_(gen_shadow_store_guarded)(
       }
    }
 
+   /* Break up the operation if to big, select the correct helperset and send
+    * forward to gen_ebit_store_part */
    IRType shadow_type = typeOfIRExpr(out->tyenv, shadow.ebits);
    switch (shadow_type) {
       case Ity_I8:
@@ -531,6 +649,14 @@ void EC_(gen_shadow_store_guarded)(
    }
 }
 
+/*------------------------------------------------------------*/
+/*--- Load                                                ---*/
+/*------------------------------------------------------------*/
+
+/* The load is structured similarly to store, but there is not distinction
+ * between protected/unprotected path. */
+
+/* Fallback helper for any value size and alignment */
 static void helper_load_slow(void* dst, Addr addr, SizeT size)
 {
    UChar* dst_char = dst;
@@ -539,12 +665,14 @@ static void helper_load_slow(void* dst, Addr addr, SizeT size)
    }
 }
 
+/* Function to strip out the protection tag from loaded bytes */
 static Ec_LargeInt load_filter(SizeT size, Ec_LargeInt ebits)
 {
    tl_assert((ebits & EC_(mk_byte_vector)(size, ~EC_VALID_EBITS, ~EC_VALID_EBITS)) == 0);
    return ebits & EC_(mk_byte_vector)(size, ~EC_PROTECTED_TAG, ~EC_PROTECTED_TAG);
 }
 
+/* Type of a load helper */
 typedef VG_REGPARM(1) SizeT (*load_helper_fn)(Addr addr);
 
 static VG_REGPARM(1) SizeT helper_load_ebit_8(Addr addr)
@@ -588,13 +716,32 @@ static VG_REGPARM(1) SizeT helper_load_ebit_64(Addr addr)
 #endif
 
 static IRExpr* gen_shadow_load_part(
-      IRSB* out, IREndness e, IRType shadow_type, IRExpr* addr, SizeT value_size, SizeT offset,
-      const char *helper_name, load_helper_fn helper, IRExpr* guard)
+      /* target for the generated VexIR */
+      IRSB* out,
+      /* the store operation endianess, as provided by valgrind */
+      IREndness e,
+      /* VexIR type for the loaded shadow value */
+      IRType shadow_type,
+      /* load address of the whole operation */
+      IRExpr* addr,
+      /* size of the loaded value (must correspond to shadow_type) */
+      SizeT value_size,
+      /* offset of the load part inside the whole load operation,
+       * this is in-register offset (that is alway big-endian) */
+      SizeT offset,
+      /* helper name to use (for debuging purposes */
+      const char *helper_name,
+      /* helper fnptr to use, must correspond to value_size */
+      load_helper_fn helper,
+      /* guard (conditional operation), opt. */
+      IRExpr* guard)
 {
    SizeT part_size = sizeofIRType(shadow_type);
+   /* convert the offset to in-memory offset (endianess dependent) */
    if (e == Iend_LE)
       offset = value_size - (offset + part_size);
 
+   /* compute addr + offset */
    if (offset != 0) {
       IRTemp addr_offset_tmp = newIRTemp(out->tyenv, EC_NATIVE_IRTYPE);
       IRExpr* addr_offset = IRExpr_Binop(
@@ -604,12 +751,14 @@ static IRExpr* gen_shadow_load_part(
       addr = IRExpr_RdTmp(addr_offset_tmp);
    }
 
+   /* do the load via the helper */
    IRTemp result_tmp = newIRTemp(out->tyenv, EC_NATIVE_IRTYPE);
    IRDirty* dirty = unsafeIRDirty_1_N(result_tmp, 1, helper_name, helper, mkIRExprVec_1(addr));
    if (guard)
       dirty->guard = guard;
    addStmtToIRSB(out, IRStmt_Dirty(dirty));
 
+   /* Narrow down the word-sized result from the helper to the needed size */
    if (part_size < sizeof(SizeT)) {
       IRTemp narrowed_result_tmp = newIRTemp(out->tyenv, shadow_type);
       IRExpr* narrowed = EC_(change_width)(out->tyenv, IRExpr_RdTmp(result_tmp), shadow_type);
@@ -620,6 +769,7 @@ static IRExpr* gen_shadow_load_part(
    }
 }
 
+/* see gen_shadow_load_guarded */
 Ec_ShadowExpr EC_(gen_shadow_load)(
       IRSB* out, IREndness endness, IRType type, IRExpr* addr)
 {
@@ -627,6 +777,12 @@ Ec_ShadowExpr EC_(gen_shadow_load)(
    return EC_(gen_shadow_load_guarded)(out, endness, type, addr, ILGop_INVALID, NULL, no_alt);
 }
 
+/* Genereate an shadow memory load operation for both otags and endianess tags.
+ *
+ * This function is called from ec_main for each store instruction.
+ *
+ * The operation will only be performed if guarded evaluates to true. If the
+ * guard evaluates to false, no load is done and `alt` is returned */
 Ec_ShadowExpr EC_(gen_shadow_load_guarded)(
       IRSB* out, IREndness e, IRType type, IRExpr* addr,
       IRLoadGOp cvt, IRExpr* guard, Ec_ShadowExpr alt)
@@ -639,6 +795,8 @@ Ec_ShadowExpr EC_(gen_shadow_load_guarded)(
    tl_assert(e == Iend_LE);
 #endif
 
+   /* Break down to smaller operations if needed, call gen_shadow_load_part with
+    * the correct helper */
    Ec_ShadowExpr r = {NULL, NULL};
    switch (type) {
    case Ity_I8:
@@ -711,6 +869,7 @@ Ec_ShadowExpr EC_(gen_shadow_load_guarded)(
       VG_(tool_panic)("shadow_load_guarded unsupported ebit type");
    }
 
+   /* Implement the guarded behaviour using ternary operator. */
    if (guard) {
       IRTemp value_tmp = newIRTemp(out->tyenv, type);
       addStmtToIRSB(out, IRStmt_WrTmp(value_tmp, r.ebits));

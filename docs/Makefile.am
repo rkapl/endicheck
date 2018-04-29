@@ -127,7 +127,8 @@ XSL_WEBSITE_STYLE     = $(mylibdir)/vg-html-website.xsl
 XSL_MAN_STYLES = \
     /usr/share/sgml/docbook/xsl-stylesheets/manpages/docbook.xsl \
     /usr/share/xml/docbook/stylesheet/nwalsh/current/manpages/docbook.xsl \
-    /usr/share/xml/docbook/stylesheet/nwalsh/manpages/docbook.xsl
+    /usr/share/xml/docbook/stylesheet/nwalsh/manpages/docbook.xsl \
+    /usr/share/xml/docbook/xsl-stylesheets-1.79.2/manpages/docbook.xsl
 
 all-docs: FAQ.txt man-pages html-docs print-docs
 
