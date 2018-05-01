@@ -972,11 +972,11 @@ static Ec_ShadowExpr geti2shadow(Ec_Env* env, IRExpr* expr)
    IRRegArray* orig_array = expr->Iex.GetI.descr;
    IRExpr* ix = expr->Iex.GetI.ix;
    Int bias = expr->Iex.GetI.bias;
-   IRType ebit_type = orig_array->elemTy;
+   IRType ebit_type = type2ebit(orig_array->elemTy);
    IRRegArray* ebit_array = mkIRRegArray(orig_array->base + env->shadow_ebit_temp_base, ebit_type, orig_array->nElems);
    r.ebits = IRExpr_GetI(ebit_array, ix, bias);
    if (EC_(opt_track_origins)) {
-      /* See the storei for comments */
+      /* See the shadow_puti for comments */
       IRType otag_type = VG_(get_otrack_reg_array_equiv_int_type)(orig_array);
       Int otag_base = VG_(get_otrack_shadow_offset)(orig_array->base, sizeofIRType(orig_array->elemTy));
       if (otag_base >= 0) {
