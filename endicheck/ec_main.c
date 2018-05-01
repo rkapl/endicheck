@@ -977,13 +977,15 @@ static Ec_ShadowExpr geti2shadow(Ec_Env* env, IRExpr* expr)
    r.ebits = IRExpr_GetI(ebit_array, ix, bias);
    if (EC_(opt_track_origins)) {
       /* See the shadow_puti for comments */
+      /* Note that get_otrack_shadow_offset is not used in geti/puti case */
       IRType otag_type = VG_(get_otrack_reg_array_equiv_int_type)(orig_array);
-      Int otag_base = VG_(get_otrack_shadow_offset)(orig_array->base, sizeofIRType(orig_array->elemTy));
-      if (otag_base >= 0) {
-         otag_base += env->shadow_otag_state_base;
-         IRRegArray* otag_array = mkIRRegArray(otag_base, otag_type, orig_array->nElems);
-         IRExpr* otag_expr = assignNew(env, IRExpr_GetI(otag_array, ix, bias));
-         r.origin = assignNew(env, narrow_to_32(env, otag_expr));
+      Int otag_base = orig_array->base + env->shadow_otag_state_base;
+      if (otag_type != Ity_INVALID) {
+          IRRegArray* otag_array = mkIRRegArray(otag_base, otag_type, orig_array->nElems);
+          IRExpr* otag_expr = assignNew(env, IRExpr_GetI(otag_array, ix, bias));
+          r.origin = assignNew(env, narrow_to_32(env, otag_expr));
+      } else {
+          r.origin = current_otag(env);
       }
    }
    return r;
@@ -1083,10 +1085,10 @@ static void shadow_puti(Ec_Env *env, IRPutI* puti)
           * (because the type is used to dictate the stride, and sometimes
           * Valgrind wants us to use 8 byte stride)
           */
+         /* Note that get_otrack_shadow_offset is not used in geti/puti case */
          IRType otag_type = VG_(get_otrack_reg_array_equiv_int_type)(puti->descr);
-         Int otag_base = VG_(get_otrack_shadow_offset)(puti->descr->base, sizeofIRType(puti->descr->elemTy));
-         if (otag_base >= 0) {
-            otag_base += env->shadow_otag_state_base;
+         Int otag_base = puti->descr->base + env->shadow_otag_state_base;
+         if (otag_type != Ity_INVALID) {
             IRExpr* widened_origin = widen_from_32(env, shadow_value.origin, otag_type);
             IRRegArray* otag_array = mkIRRegArray(otag_base, otag_type, descr->nElems);
             stmt(env, IRStmt_PutI(mkIRPutI(otag_array, puti->ix, puti->bias, widened_origin)));
