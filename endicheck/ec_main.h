@@ -57,6 +57,7 @@ typedef struct {
 extern Bool EC_(opt_guess_const_size);
 extern Bool EC_(opt_track_origins);
 extern Bool EC_(opt_protection);
+extern Bool EC_(opt_precise_origins);
 
 Ec_Endianity EC_(endianity_for_shadow)(Ec_Shadow shadow);
 Bool EC_(is_empty_for_shadow) (Ec_Shadow shadow);

@@ -55,6 +55,8 @@ typedef struct {
       IRTypeEnv* tyenv;
       /* Guest native word size */
       IRType word_type;
+      /* Current value of otag, lazily initialized */
+      IRExpr *lazy_otag;
 
       /* Note: Do not use the following directly, there are helpers to get
        * shadow variables and state (and it wouldn't work for
@@ -178,11 +180,13 @@ static VG_REGPARM(0) ULong helper_gen_exectx(void)
 static IRExpr* current_otag(Ec_Env *env)
 {
    tl_assert(EC_(opt_track_origins));
-   IRTemp otag = newIRTemp(env->tyenv, Ity_I32);
-   IRCallee* call = mkIRCallee(0, "ec_gen_exectx", VG_(fnptr_to_fnentry)(helper_gen_exectx));
-   stmt(env, IRStmt_WrTmp(otag, IRExpr_CCall(call, Ity_I32, mkIRExprVec_0())));
-   IRExpr* expr = IRExpr_RdTmp(otag);
-   return expr;
+   if (!env->lazy_otag) {
+      IRTemp otag = newIRTemp(env->tyenv, Ity_I32);
+      IRCallee* call = mkIRCallee(0, "ec_gen_exectx", VG_(fnptr_to_fnentry)(helper_gen_exectx));
+      stmt(env, IRStmt_WrTmp(otag, IRExpr_CCall(call, Ity_I32, mkIRExprVec_0())));
+      env->lazy_otag = IRExpr_RdTmp(otag);
+   }
+   return env->lazy_otag;
 }
 
 /* Combine the ebits with current OTag to generate full shadow for a variable */
@@ -1243,6 +1247,7 @@ static IRSB* EC_(instrument) (
    env.shadow_ebit_state_base = layout->total_sizeB;
    env.shadow_otag_state_base = layout->total_sizeB*2;
    env.tyenv = env.out_sb->tyenv;
+   env.lazy_otag = NULL;
 
    /* Unlike memcheck, we try to get off with having direct mapping between temporaries and their
     * shadow values. They are placed directly after the regular variables, so
@@ -1316,9 +1321,12 @@ static IRSB* EC_(instrument) (
 
 
          case Ist_AbiHint: /* we don't care */
-         case Ist_IMark:
          case Ist_NoOp:
          case Ist_MBE:
+         break;
+         case Ist_IMark:
+            if (EC_(opt_precise_origins))
+               env.lazy_otag = NULL;
          break;
 
          default:
@@ -1477,6 +1485,9 @@ Bool EC_(opt_track_origins) = False;
  * automatically guarding against storing wrong endianity. Has performance
  * impact. */
 Bool EC_(opt_protection) = True;
+/* Produce per-instruction OTags. If False, OTags are shared for the whole IRSB, reducing the
+ * precision */
+Bool EC_(opt_precise_origins) = True;
 
 /* Parse command-line options (even those defined in other files) */
 static Bool ec_process_cmd_line_options(const char* arg)
@@ -1485,6 +1496,7 @@ static Bool ec_process_cmd_line_options(const char* arg)
    else if VG_BOOL_CLO(arg, "--guess-const-size", EC_(opt_guess_const_size)) {}
    else if VG_BOOL_CLO(arg, "--track-origins", EC_(opt_track_origins)) {}
    else if VG_BOOL_CLO(arg, "--protection", EC_(opt_protection)) {}
+   else if VG_BOOL_CLO(arg, "--precise-origins", EC_(opt_precise_origins)) {}
    else if VG_BOOL_CLO(arg, "--report-different-origins", EC_(opt_report_different_origins)) {}
    else return False;
    return True;
@@ -1498,6 +1510,7 @@ static void ec_print_usage(void) {
 "    --track-origins=yes|no      track origins for data\n"
 "    --protection=yes|no         allow certain memory regions to check for endianity on stores\n"
 "    --report-different-origins=yes|no report endianity errors as separate if origins are different\n"
+"    --precise-origins=yes|no    do origin tracking more precisely, but with less performance"
    );
 }
 
