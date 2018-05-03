@@ -1486,7 +1486,7 @@ Bool EC_(opt_track_origins) = False;
 /* Enable memory protection. Allow memory regions to be `protected`,
  * automatically guarding against storing wrong endianity. Has performance
  * impact. */
-Bool EC_(opt_protection) = True;
+Bool EC_(opt_protection) = False;
 /* Produce per-instruction OTags. If False, OTags are shared for the whole IRSB, reducing the
  * precision */
 Bool EC_(opt_precise_origins) = True;
