@@ -38,3 +38,6 @@ EXTRA_DIST += calloc_is_any.vgtest calloc_is_any.stderr.exp
 
 check_PROGRAMS += casted_byte
 EXTRA_DIST += casted_byte.vgtest casted_byte.stderr.exp
+
+check_PROGRAMS += openttd
+EXTRA_DIST += openttd.vgtest openttd.stderr.exp
