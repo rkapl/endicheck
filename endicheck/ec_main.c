@@ -732,8 +732,8 @@ static Ec_ShadowExpr shift2shadow(Ec_Env* env, IRExpr* expr)
 {
    tl_assert(expr->tag == Iex_Binop);
    IRType type = typeOfIRExpr(env->tyenv, expr);
-   int value_size = sizeofIRType(type);
-   /* Shift of size can no be be multiple of eight, unless zero, but that
+   int value_size = sizeofIRType(type) * 8;
+   /* Shift size can no be be multiple of eight, unless zero, but that
     * hopefully does not happen. */
    if (value_size == 8)
       return default_shadow(env, expr);

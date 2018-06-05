@@ -52,11 +52,12 @@ typedef uint64_t Ec_LargeInt;
 static inline ULong EC_(mk_byte_vector)(int length,  UChar first, UChar rest)
 {
    tl_assert(length > 0 && length <= sizeof(ULong));
-   Ec_LargeInt acc = rest;
-   for (int i = 1; i<length; i++) {
-      acc <<= 8;
+   Ec_LargeInt acc = 0;
+   for (int i = 0; i<length - 1; i++) {
       acc |= rest;
+      acc <<= 8;
    }
+   acc |= first;
    return acc;
 }
 
