@@ -1,12 +1,3 @@
 
-Writing data of invalid endianity into protected region
-Address written to is 0x........, length 4:
-The value was probably created at this point:
-   at 0x........: source (protection.c:17)
-   by 0x........: ???
-   by 0x........: main (protection.c:24)
-The write occured here:
-   at 0x........: main (protection.c:24)
 
-
-ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)
+ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

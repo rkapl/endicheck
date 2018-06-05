@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <string.h>
 
-
 /* Try to avoid compiler optimization */
 static __attribute__ ((noinline)) uint8_t source() {
+   int test = 1;
    return 'a';
 }
 

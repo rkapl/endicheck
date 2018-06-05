@@ -15,6 +15,7 @@ static uint32_t htobe32(uint32_t param) {
 
 /* Try to avoid compiler optimization */
 static __attribute__ ((noinline)) uint32_t source() {
+   int test = 1;
    return 0xDEADBEEF;
 }
 
