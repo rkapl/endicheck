@@ -886,6 +886,9 @@ static Ec_ShadowExpr qop2shadow(Ec_Env* env, IRExpr* expr)
 static Ec_LargeInt guess_constant(Ec_LargeInt value) {
    Bool still_zero = True;
    Ec_LargeInt acc = 0;
+   if (value == 0) {
+      return EC_(mk_byte_vector)(sizeof(Ec_LargeInt), EC_ANY|EC_EMPTY_TAG, EC_ANY|EC_EMPTY_TAG);
+   }
    for(int i = sizeof(Ec_LargeInt) - 1; i >= 0; i--) {
       acc = acc << 8;
       Ec_LargeInt leading = (value >> i*8);
@@ -1031,7 +1034,7 @@ static Ec_ShadowExpr expr2shadow(Ec_Env* env, IRExpr* expr)
       case Iex_ITE:
          return ite2shadow(env, expr);
       case Iex_Const:
-         if (EC_(opt_guess_const_size))
+         if (EC_(opt_guess_const_size) || EC_(opt_ignore_zeroes))
             return const_guess2shadow(env, expr);
          else
             return default_shadow(env, expr);
@@ -1490,6 +1493,8 @@ Bool EC_(opt_protection) = False;
 /* Produce per-instruction OTags. If False, OTags are shared for the whole IRSB, reducing the
  * precision */
 Bool EC_(opt_precise_origins) = True;
+/* Consider 'zero' constants as having 'any' type */
+Bool EC_(opt_ignore_zeroes) = True;
 
 /* Parse command-line options (even those defined in other files) */
 static Bool ec_process_cmd_line_options(const char* arg)
@@ -1500,6 +1505,7 @@ static Bool ec_process_cmd_line_options(const char* arg)
    else if VG_BOOL_CLO(arg, "--protection", EC_(opt_protection)) {}
    else if VG_BOOL_CLO(arg, "--precise-origins", EC_(opt_precise_origins)) {}
    else if VG_BOOL_CLO(arg, "--report-different-origins", EC_(opt_report_different_origins)) {}
+   else if VG_BOOL_CLO(arg, "--ignore-zeroes", EC_(opt_ignore_zeroes)) {}
    else return False;
    return True;
 }
@@ -1513,6 +1519,7 @@ static void ec_print_usage(void) {
 "    --protection=yes|no         allow certain memory regions to check for endianity on stores\n"
 "    --report-different-origins=yes|no report endianity errors as separate if origins are different\n"
 "    --precise-origins=yes|no    do origin tracking more precisely, but with less performance"
+"    --ignore-zeroes=yes|no      consider all zero constants byte-sized, even if they are wider"
    );
 }
 
