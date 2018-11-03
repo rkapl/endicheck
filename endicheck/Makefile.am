@@ -7,6 +7,13 @@ include $(top_srcdir)/Makefile.tool.am
 pkginclude_HEADERS = \
 	endicheck.h
 
+nobase_pkginclude_HEADERS = \
+	ec-overlay/netdb.h \
+	ec-overlay/unistd.h \
+	ec-overlay/ec_overlay_common.h \
+	ec-overlay/sys/socket.h \
+	ec-overlay/arpa/inet.h
+
 noinst_HEADERS = \
 	ec_main.h \
 	ec_shadow.h \
