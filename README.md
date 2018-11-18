@@ -1,12 +1,12 @@
-# EndiCheck
+# Endicheck
 
-EndiCheck is a Valgrind tool to help you detect missing byte-swaps in your
+Endicheck is a Valgrind tool to help you detect missing byte-swaps in your
 program.
 
-EndiCheck is distributed as a fork of Valgrind (this repository you are
+Endicheck is distributed as a fork of Valgrind (this repository you are
 browsing).
 
-Note: Original Valgrind readme is available in the `README.valgrind` file.
+Note: Original Valgrind README is available in the `README.valgrind` file.
 
 # Build & install
 
@@ -14,21 +14,21 @@ To build and install Valgrind, run;
 
     ./autogen.sh && ./configure --prefix=/opt/endicheck && make && sudo make install
 
-It is recommanded to use --prefix to install into other-than-default location,
+It is recommended to use --prefix to install into other-than-default location,
 since you typically do not want to replace your system's installation of
-Valgrind. EndiCheck still contains all the original Valgrind tools, like
+Valgrind. Endicheck still contains all the original Valgrind tools, like
 MemCheck, but it might not contain all the latest updates or distribution
 patches.
 
-It is also possible to try out EndiCheck without the `make install` step. Use the
-`./vg-in-place` script to run EndiCheck in that case.
+It is also possible to try out Endicheck without the `make install` step. Use the
+`./vg-in-place` script to run Endicheck in that case.
 
 # Run
 
     /opt/endicheck/bin/valgrind --tool=endicheck ls -l
 
 This should run `ls -l` and produce more errors. However, to take advantage of
-EndiCheck (and check for some real errors), you have to annotate your program.
+Endicheck (and check for some real errors), you have to annotate your program.
 
 # Annotations
 
@@ -48,8 +48,8 @@ int main() {
 }
 ```
 
-We want to check that this program outputs only data of correct endianity. For
-that, we need to insert calls to EndiCheck into the `htobe32` and `write`
+We want to check that this program outputs only data of correct endianness. For
+that, we need to insert calls to Endicheck into the `htobe32` and `write`
 functions. A version with such changes is below.
 
 ```c
@@ -81,16 +81,16 @@ int main() {
 }
 ```
 
-If you remove the `htobe32` call EndiCheck will emit an error. Naturally this is
-an overkill for such a small program, but EndiCheck can track data in more
+If you remove the `htobe32` call, Endicheck will emit an error. Naturally this is
+an overkill for such a small program, but Endicheck can track data in more
 complex programs too.
 
 In some programs that use standard operating functions `write` or `htonl`, you
-can use the EndiCheck overlay headers.  Annotating the program can then be as
-simmple as adding `-I/opt/endicheck/include/ec-overlay` to your build (well, if
+can use the Endicheck overlay headers.  Annotating the program can then be as
+simple as adding `-I/opt/endicheck/include/ec-overlay` to your build (well, if
 you are lucky).
 
 # Limitations
 
-EndiCheck currently works only for data leaving the program. Opposite direction
+Endicheck currently works only for data leaving the program. The opposite direction
 is not yet implemented.
