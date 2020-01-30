@@ -90,6 +90,12 @@ can use the Endicheck overlay headers.  Annotating the program can then be as
 simple as adding `-I/opt/endicheck/include/ec-overlay` to your build (well, if
 you are lucky).
 
+# TACAS Artifact withe demonstrations
+
+At https://github.com/rkapl/endicheck/releases/tag/9e3406c4aaa2e, you can
+download the TACAS artifact submission. It contains demonstration test cases and
+scripts to build & run them. The artifact is compatible with Ubuntu 18.04.
+
 # Limitations
 
 Endicheck currently works only for data leaving the program. The opposite direction
